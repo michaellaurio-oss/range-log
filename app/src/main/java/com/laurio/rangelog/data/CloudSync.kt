@@ -2,6 +2,14 @@ package com.laurio.rangelog.data
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.util.Base64
+import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayOutputStream
+import java.io.File
+import kotlinx.coroutines.withContext
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -48,7 +56,7 @@ data class SyncStatus(
 class CloudSync(
     private val context: Context,
     private val db: AppDatabase,
-    private val deletePhotoFile: (String) -> Unit,
+    private val photoFile: (String) -> File,
 ) {
     private val dao = db.dao()
     private val auth = FirebaseAuth.getInstance()
@@ -125,6 +133,7 @@ class CloudSync(
                 prefs.edit().putBoolean("localAuthoritative", false).apply()
             }
             listen(email)
+            syncPhotos()
         } catch (e: Exception) {
             _status.value = SyncStatus(email, "Can't reach the cloud yet. It will retry next time the app opens.")
         }
@@ -160,6 +169,7 @@ class CloudSync(
         mutex.withLock { pushAll(replaceRemote = true) }
         markSynced(u)
         listen(email)
+        syncPhotos()
     }
 
     /** Resolves the "both have data" case by replacing this phone's data with the cloud's. */
@@ -174,6 +184,7 @@ class CloudSync(
         }
         markSynced(u)
         listen(email)
+        syncPhotos()
     }
 
     // ---------------- Cloud -> phone ----------------
@@ -288,8 +299,9 @@ class CloudSync(
                 dao.insertPhotos(photos.map { Photo(sessionId = sid, fileName = it.str("fileName"), caption = it.str("caption")) })
             }
         }
+        photos.forEach { scope.launch { downloadPhoto(it.str("fileName")) } }
         val kept = photos.map { it.str("fileName") }.toSet()
-        current?.photos.orEmpty().filter { it.fileName !in kept }.forEach { deletePhotoFile(it.fileName) }
+        current?.photos.orEmpty().filter { it.fileName !in kept }.forEach { photoFile(it.fileName).delete() }
     }
 
     private suspend fun removeSession(syncId: String) {
@@ -301,7 +313,7 @@ class CloudSync(
             dao.deleteSessionPhotos(s.id)
             dao.deleteSessionRow(s.id)
         }
-        photos.forEach { deletePhotoFile(it.fileName) }
+        photos.forEach { photoFile(it.fileName).delete() }
     }
 
     // ---------------- Phone -> cloud ----------------
@@ -328,6 +340,7 @@ class CloudSync(
     suspend fun pushSession(id: Long) {
         val s = dao.getSession(id) ?: return
         (ref("sessions", s.session.syncId) ?: return dirtyIfSignedOut()).set(sessionDoc(s)).report()
+        s.photos.forEach { p -> scope.launch { uploadPhoto(p.fileName) } }
     }
 
     fun deleteSession(syncId: String) {
@@ -372,6 +385,76 @@ class CloudSync(
             chunk.forEach { (r, data) -> if (data == null) batch.delete(r) else batch.set(r, data) }
             batch.commit().report()
         }
+    }
+
+    // ---------------- Photos ----------------
+    // Each photo is shrunk to a web-sized JPEG and stored as a base64 string in
+    // users/{uid}/photos/{fileName} (Firestore documents max out at 1 MB).
+
+    private fun uploadedPhotos(): MutableSet<String> =
+        prefs.getStringSet("uploadedPhotos", emptySet())!!.toMutableSet()
+
+    private suspend fun uploadPhoto(name: String) {
+        val r = ref("photos", name) ?: return
+        if (name in uploadedPhotos()) return
+        val file = photoFile(name)
+        if (!file.exists()) return
+        val data = withContext(Dispatchers.IO) { shrink(file) } ?: return
+        r.set(mapOf("data" to data)).addOnSuccessListener {
+            synchronized(prefs) {
+                prefs.edit().putStringSet("uploadedPhotos", uploadedPhotos().apply { add(name) }).apply()
+            }
+        }.report()
+    }
+
+    private suspend fun downloadPhoto(name: String) {
+        val file = photoFile(name)
+        if (file.exists()) return
+        val r = ref("photos", name) ?: return
+        try {
+            val data = r.get().await().getString("data") ?: return
+            withContext(Dispatchers.IO) { file.writeBytes(Base64.decode(data, Base64.DEFAULT)) }
+            synchronized(prefs) {
+                prefs.edit().putStringSet("uploadedPhotos", uploadedPhotos().apply { add(name) }).apply()
+            }
+        } catch (_: Exception) {
+            // Not uploaded yet or offline; picked up on a later start.
+        }
+    }
+
+    /** Uploads local photos the cloud doesn't have yet and fetches ones that exist only in the cloud. */
+    private fun syncPhotos() {
+        scope.launch {
+            dao.allPhotos().map { it.fileName }.distinct().forEach { name ->
+                if (photoFile(name).exists()) uploadPhoto(name) else downloadPhoto(name)
+            }
+        }
+    }
+
+    private fun shrink(file: File): String? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2560) sample *= 2
+        val decoded = BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        val degrees = when (
+            ExifInterface(file.path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        ) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+        val scale = minOf(1f, 1280f / maxOf(decoded.width, decoded.height))
+        val matrix = Matrix().apply { postRotate(degrees); postScale(scale, scale) }
+        val bmp = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        for (quality in listOf(80, 65, 50, 35)) {
+            val out = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            if (out.size() <= 600_000) return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        }
+        return null
     }
 
     private fun com.google.android.gms.tasks.Task<Void>.report() {

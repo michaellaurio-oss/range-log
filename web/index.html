@@ -46,6 +46,11 @@
   dialog::backdrop { background: rgba(0,0,0,.45); }
   .entry { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; }
   .strs input { width: 80px; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .thumbs .ph { position: relative; }
+  .thumbs img { height: 72px; min-width: 54px; border-radius: 6px; background: var(--line); cursor: zoom-in; display: block; }
+  .thumbs .ph button { position: absolute; top: 2px; right: 2px; padding: 0 6px; }
+  #lb img { max-width: 100%; max-height: 80vh; display: block; margin: 0 auto; }
   #signin { text-align: center; margin-top: 18vh; }
   #status { position: fixed; bottom: 12px; left: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
   .hidden { display: none !important; }
@@ -75,12 +80,13 @@
 <div id="status"></div>
 
 <dialog id="dlg"></dialog>
+<dialog id="lb"><img id="lbImg" alt=""><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, collection, doc, onSnapshot, setDoc, deleteDoc }
+import { initializeFirestore, persistentLocalCache, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app = initializeApp({
@@ -109,6 +115,36 @@ const col = (name) => collection(fs, "users", uid, name);
 const ref = (name, id) => doc(fs, "users", uid, name, id);
 const save = (name, id, obj) => setDoc(ref(name, id), obj).catch(showErr);
 const remove = (name, id) => deleteDoc(ref(name, id)).catch(showErr);
+const photoCache = new Map();
+function photoData(name) {
+  if (!photoCache.has(name)) {
+    photoCache.set(name, getDoc(ref("photos", name))
+      .then((d) => (d.exists() ? "data:image/jpeg;base64," + d.data().data : null))
+      .catch(() => null)
+      .then((src) => { if (!src) photoCache.delete(name); return src; }));
+  }
+  return photoCache.get(name);
+}
+function fillPhotos(root) {
+  root.querySelectorAll("img[data-photo]").forEach(async (img) => {
+    const src = await photoData(img.dataset.photo);
+    if (src) { img.src = src; img.onclick = () => { $("#lbImg").src = src; $("#lb").showModal(); }; }
+    else img.alt = "not uploaded yet";
+  });
+}
+$("#lbClose").onclick = () => $("#lb").close();
+async function shrinkImage(file) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  for (const q of [0.8, 0.65, 0.5, 0.35]) {
+    const url = c.toDataURL("image/jpeg", q);
+    if (url.length * 0.75 <= 600000) return url.split(",")[1];
+  }
+  throw new Error("That photo is too large to store");
+}
 function showErr(e) { $("#status").textContent = "Problem: " + e.message; }
 
 // ---------- sign-in ----------
@@ -174,6 +210,7 @@ function render() {
   else if (tab === "guns") v.innerHTML = gunsView();
   else v.innerHTML = statsView();
   wire(v);
+  fillPhotos(v);
 }
 
 function sessionsView() {
@@ -192,7 +229,7 @@ function sessionsView() {
       <div class="grow"><b>${fmtDate(s.date)}</b> ${s.location ? "· " + esc(s.location) : ""}
         <div class="muted">${names || "No guns logged"}</div>
         ${s.notes ? `<div class="muted">${esc(s.notes)}</div>` : ""}
-        ${(s.photos || []).length ? `<div class="muted">${s.photos.length} photo(s) on the phone</div>` : ""}</div>
+        ${(s.photos || []).length ? `<div class="thumbs">${s.photos.map((p) => `<img data-photo="${esc(p.fileName)}" alt="loading…">`).join("")}</div>` : ""}</div>
       <div><b>${sessionRounds(s) || ""}</b> <span class="muted">${sessionRounds(s) ? "rds" : ""}</span></div>
       <button class="alt" data-act="editSession" data-id="${s.id}">Edit</button></div></div>`;
   }
@@ -304,7 +341,8 @@ function sessionDialog(id) {
           <button class="alt" data-rms="${i},${j}">×</button></div>`).join("")}
           <button class="alt" style="margin-top:6px" data-adds="${i}">+ String (rds @ yds)</button></div></div>`).join("")}
       <button class="alt" id="addGun">+ Add gun</button>
-      ${s.photos.length ? `<p class="muted">${s.photos.length} photo(s) attached on the phone (kept when you save).</p>` : ""}
+      <div class="thumbs">${s.photos.map((p, k) => `<div class="ph"><img data-photo="${esc(p.fileName)}" alt="loading…"><button class="alt" data-rmp="${k}">×</button></div>`).join("")}</div>
+      <label>Add photos <input type="file" id="addPhotos" accept="image/*" multiple></label>
       <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
       <span class="grow"></span>${id ? '<button class="alt danger" id="del">Delete session</button>' : ""}</div>`;
     dlg.querySelectorAll("[data-f]").forEach((el) => el.onchange = () => {
@@ -317,6 +355,20 @@ function sessionDialog(id) {
     dlg.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { keep(); s.guns.splice(b.dataset.rm, 1); draw(); });
     dlg.querySelectorAll("[data-adds]").forEach((b) => b.onclick = () => { keep(); (s.guns[b.dataset.adds].strings ||= []).push({ rounds: null, yards: 0, notes: "" }); draw(); });
     dlg.querySelectorAll("[data-rms]").forEach((b) => b.onclick = () => { keep(); const [i, j] = b.dataset.rms.split(","); s.guns[i].strings.splice(j, 1); draw(); });
+    dlg.querySelectorAll("[data-rmp]").forEach((b) => b.onclick = () => { keep(); s.photos.splice(b.dataset.rmp, 1); draw(); });
+    $("#addPhotos").onchange = async (ev) => {
+      keep();
+      try {
+        for (const f of ev.target.files) {
+          const name = "WEB_" + crypto.randomUUID() + ".jpg";
+          const data = await shrinkImage(f);
+          await setDoc(ref("photos", name), { data });
+          photoCache.set(name, Promise.resolve("data:image/jpeg;base64," + data));
+          s.photos.push({ fileName: name, caption: "" });
+        }
+      } catch (e) { alert(e.message); }
+      draw();
+    };
     $("#addGun").onclick = () => { keep(); s.guns.push({ gun: "", rounds: null, notes: "", strings: [] }); draw(); };
     $("#cancel").onclick = closeDlg;
     $("#ok").onclick = () => {
@@ -331,6 +383,7 @@ function sessionDialog(id) {
       save("sessions", id || crypto.randomUUID(), out); closeDlg();
     };
     if (id) $("#del").onclick = () => { if (confirm("Delete this session?")) { remove("sessions", id); closeDlg(); } };
+    fillPhotos(dlg);
   };
   draw(); dlg.showModal();
 }

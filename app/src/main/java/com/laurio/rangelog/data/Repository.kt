@@ -34,7 +34,7 @@ data class PhotoImportResult(val added: Int, val duplicates: Int, val unmatched:
 
 class Repository(private val context: Context, private val db: AppDatabase) {
     private val dao = db.dao()
-    val sync = CloudSync(context, db) { name -> photoFile(name).delete() }
+    val sync = CloudSync(context, db) { name -> photoFile(name) }
 
     val json = Json {
         prettyPrint = true
