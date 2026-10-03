@@ -24,6 +24,8 @@ data class Gun(
     val cleanInterval: Int? = null,
     /** Retired guns are hidden from the picker when logging a new session. */
     val active: Boolean = true,
+    /** Rented or borrowed: no cleaning log or reminders. */
+    @ColumnInfo(defaultValue = "0") val notMine: Boolean = false,
     /** Stable id shared across devices (the cloud document id). */
     @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
 )

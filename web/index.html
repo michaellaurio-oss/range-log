@@ -230,7 +230,7 @@ function gunSummary(id) {
       if (last === null || s.date > last) { since += e.rounds ?? 0; if (e.rounds == null) uncounted++; }
     }
   }
-  const due = g.cleanInterval != null && since >= g.cleanInterval;
+  const due = !g.notMine && g.cleanInterval != null && since >= g.cleanInterval;
   return { total, since, count, lastShot, last, uncounted, due };
 }
 
@@ -277,10 +277,10 @@ function gunsView() {
       <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
         <div class="muted">${esc(g.description)}</div>
         <div class="muted">${s.total.toLocaleString()} rds total · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
-        <div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
+        ${g.notMine ? '<div class="muted">Not my gun</div>' : `<div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
           ${s.uncounted ? `<span class="muted">· ${s.uncounted} uncounted</span>` : ""}</div>
-        <div class="muted">${g.cleanInterval ? (s.due ? "Cleaning due" : "Clean") + " every " + g.cleanInterval + " rds" : "No cleaning reminder"}</div></div>
-      <button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button></div></div>`;
+        <div class="muted">${g.cleanInterval ? (s.due ? "Cleaning due" : "Clean") + " every " + g.cleanInterval + " rds" : "No cleaning reminder"}</div>`}</div>
+      ${g.notMine ? "" : `<button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button>`}</div></div>`;
   }
   return html;
 }
@@ -331,42 +331,45 @@ function gunView(id) {
       <button class="btn" id="editBtn">Edit</button><button class="alt" id="closeBtn">Close</button></div>
     ${g.description ? `<p><b>${esc(g.description)}</b></p>` : ""}
     ${g.active ? "" : '<p class="muted">Retired: hidden from the gun picker</p>'}
-    <p class="muted">${g.cleanInterval ? "Clean every " + g.cleanInterval + " rounds" : "No cleaning reminder"}</p>
+    <p class="muted">${g.notMine ? "Not my gun (rented or borrowed)" : g.cleanInterval ? "Clean every " + g.cleanInterval + " rounds" : "No cleaning reminder"}</p>
     ${g.notes ? `<h2>Upgrades and notes</h2><div style="white-space:pre-wrap">${esc(g.notes)}</div>` : ""}
     <div class="card ${s.due ? "due" : ""}" style="margin-top:12px">
       <b>${s.total.toLocaleString()} rounds lifetime</b>
       <div>${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
-      <div>${s.since.toLocaleString()} rounds since last cleaning${s.uncounted ? " (+" + s.uncounted + " uncounted sessions)" : ""}</div></div>
-    <div class="row"><h2 class="grow">Cleaning log</h2><button class="alt" id="cleanBtn">Cleaned it today</button></div>
+      ${g.notMine ? "" : `<div>${s.since.toLocaleString()} rounds since last cleaning${s.uncounted ? " (+" + s.uncounted + " uncounted sessions)" : ""}</div>`}</div>
+    ${g.notMine ? "" : `<div class="row"><h2 class="grow">Cleaning log</h2><button class="alt" id="cleanBtn">Cleaned it today</button></div>
     ${cleans.map((c) => `<div>${fmtDate(c.date)} ${esc(c.notes || "")}</div>`).join("") || '<span class="muted">No cleanings logged yet.</span>'}
+`}
     <h2>Sessions</h2>
     ${mine.map((x) => `<div class="row" style="padding:4px 0;cursor:pointer" data-sess="${x.id}"><span class="grow">${fmtDate(x.date)}</span><b>${roundsIn(x) || "—"} rds</b></div>`).join("") || '<span class="muted">Not logged in any session yet.</span>'}`;
   $("#closeBtn").onclick = closeDlg;
   $("#editBtn").onclick = () => gunDialog(id);
-  $("#cleanBtn").onclick = () => { save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }); closeDlg(); };
+  if ($("#cleanBtn")) $("#cleanBtn").onclick = () => { save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }); closeDlg(); };
   dlg.querySelectorAll("[data-sess]").forEach((r) => r.onclick = () => sessionView(r.dataset.sess));
   if (!dlg.open) dlg.showModal();
 }
 
 function gunDialog(id) {
-  const g = id ? data.guns.get(id) : { name: "", description: "", notes: "", cleanInterval: 500, active: true };
+  const g = id ? data.guns.get(id) : { name: "", description: "", notes: "", cleanInterval: 500, active: true, notMine: false };
   const cleans = id ? [...data.cleanings].filter(([, c]) => c.gun === id).sort((a, b) => b[1].date - a[1].date) : [];
   dlg.innerHTML = `<h3>${id ? "Edit gun" : "New gun"}</h3>
     <label>Short name</label><input id="gName" value="${esc(g.name)}">
     <label>Full make / model</label><input id="gDesc" style="width:100%" value="${esc(g.description)}">
     <label>Upgrades and notes</label><textarea id="gNotes">${esc(g.notes)}</textarea>
-    <label>Clean every (rounds, blank = no reminder)</label><input id="gInt" type="number" min="1" value="${g.cleanInterval ?? ""}">
     <label><input type="checkbox" id="gActive" ${g.active ? "checked" : ""}> Active (shows in the gun picker)</label>
+    <label><input type="checkbox" id="gNotMine" ${g.notMine ? "checked" : ""}> Not my gun (rented or borrowed: no cleaning log or reminders)</label>
+    <div id="cleanBits" class="${g.notMine ? "hidden" : ""}"><label>Clean every (rounds, blank = no reminder)</label><input id="gInt" type="number" min="1" value="${g.cleanInterval ?? ""}">
     ${id ? `<label>Cleaning log</label>${cleans.map(([cid, c]) => `<div class="row">${fmtDate(c.date)} ${esc(c.notes || "")}
-      <button class="alt danger" data-del="${cid}">Delete</button></div>`).join("") || '<span class="muted">None yet</span>'}` : ""}
+      <button class="alt danger" data-del="${cid}">Delete</button></div>`).join("") || '<span class="muted">None yet</span>'}` : ""}</div>
     <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
     <span class="grow"></span>${id ? '<button class="alt danger" id="del">Delete gun</button>' : ""}</div>`;
   dlg.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { remove("cleanings", b.dataset.del); closeDlg(); });
   $("#cancel").onclick = () => (id ? gunView(id) : closeDlg());
+  $("#gNotMine").onchange = () => $("#cleanBits").classList.toggle("hidden", $("#gNotMine").checked);
   $("#ok").onclick = () => {
     const name = $("#gName").value.trim(); if (!name) return;
     const out = { name, description: $("#gDesc").value.trim(), notes: $("#gNotes").value.trim(),
-      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked };
+      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked, notMine: $("#gNotMine").checked };
     save("guns", id || crypto.randomUUID(), out);
     if (id) { data.guns.set(id, out); gunView(id); } else closeDlg();
   };

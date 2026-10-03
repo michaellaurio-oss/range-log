@@ -245,6 +245,7 @@ class CloudSync(
             notes = d.str("notes"),
             cleanInterval = d.num("cleanInterval")?.toInt(),
             active = d["active"] as? Boolean ?: true,
+            notMine = d["notMine"] as? Boolean ?: false,
             syncId = syncId,
         )
         if (existing == null) dao.insertGun(gun) else if (existing != gun) dao.updateGun(gun)
@@ -471,7 +472,7 @@ class CloudSync(
 
         fun gunDoc(g: Gun): Map<String, Any?> = mapOf(
             "name" to g.name, "description" to g.description, "notes" to g.notes,
-            "cleanInterval" to g.cleanInterval?.toLong(), "active" to g.active,
+            "cleanInterval" to g.cleanInterval?.toLong(), "active" to g.active, "notMine" to g.notMine,
         )
 
         fun cleaningDoc(c: Cleaning, gunSyncId: String): Map<String, Any?> = mapOf(
