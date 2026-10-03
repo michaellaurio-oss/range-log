@@ -3,6 +3,7 @@
 package com.laurio.rangelog.ui
 
 import android.app.Application
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -85,6 +87,10 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
     var loaded by mutableStateOf(gunId == 0L)
         private set
 
+    private fun snapshot() = listOf(name, description, notes, cleanInterval, active)
+    private var baseline: List<Any?> = snapshot()
+    val isDirty: Boolean get() = snapshot() != baseline
+
     val summary: StateFlow<GunSummary?> = repo.gunSummaries
         .map { list -> list.firstOrNull { it.gun.id == gunId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -108,17 +114,21 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    init {
-        if (gunId != 0L) viewModelScope.launch {
-            repo.getGun(gunId)?.let { g ->
+    /** Loads the saved gun into the fields (also used to throw away unsaved edits). */
+    fun load() = viewModelScope.launch {
+        repo.getGun(gunId)?.let { g ->
                 name = g.name
                 description = g.description
                 notes = g.notes
                 cleanInterval = g.cleanInterval?.toString() ?: ""
                 active = g.active
-            }
-            loaded = true
         }
+        baseline = snapshot()
+        loaded = true
+    }
+
+    init {
+        if (gunId != 0L) load()
     }
 
     fun save(onSaved: () -> Unit) = viewModelScope.launch {
@@ -132,6 +142,7 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
                 active = active,
             )
         )
+        baseline = snapshot()
         onSaved()
     }
 
@@ -158,23 +169,40 @@ fun GunDetailScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var showCleaningDialog by remember { mutableStateOf(false) }
     var showAllSessions by remember { mutableStateOf(false) }
+    // Existing guns open for reading; Edit switches to the form.
+    var editing by rememberSaveable { mutableStateOf(vm.gunId == 0L) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    val stopEditing: () -> Unit = {
+        if (vm.gunId == 0L) onDone() else { vm.load(); editing = false }
+    }
+    val leave: () -> Unit = {
+        if (!editing) onDone() else if (vm.isDirty) confirmDiscard = true else stopEditing()
+    }
+    BackHandler(onBack = leave)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (vm.gunId == 0L) "New gun" else vm.name.ifBlank { "Gun" }) },
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = leave) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    if (vm.gunId != 0L) {
-                        IconButton(onClick = { confirmDelete = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete gun")
+                    if (!editing) {
+                        TextButton(onClick = { editing = true }) { Text("Edit") }
+                    } else {
+                        if (vm.gunId != 0L) {
+                            IconButton(onClick = { confirmDelete = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete gun")
+                            }
                         }
+                        TextButton(
+                            onClick = { vm.save { if (vm.gunId == 0L) onDone() else editing = false } },
+                            enabled = vm.name.isNotBlank(),
+                        ) { Text("Save") }
                     }
-                    TextButton(onClick = { vm.save(onDone) }, enabled = vm.name.isNotBlank()) { Text("Save") }
                 },
             )
         },
@@ -195,6 +223,7 @@ fun GunDetailScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (editing) {
             OutlinedTextField(
                 value = vm.name, onValueChange = { vm.name = it },
                 label = { Text("Short name (e.g. SP01)") }, singleLine = true,
@@ -228,6 +257,9 @@ fun GunDetailScreen(
                     )
                 }
                 Switch(checked = vm.active, onCheckedChange = { vm.active = it })
+            }
+            } else {
+                GunReadOnlyDetails(vm)
             }
 
             if (vm.gunId != 0L) {
@@ -264,8 +296,10 @@ fun GunDetailScreen(
                                 Text(c.notes, style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        IconButton(onClick = { vm.deleteCleaning(c) }) {
+                        if (editing) {
+                            IconButton(onClick = { vm.deleteCleaning(c) }) {
                             Icon(Icons.Default.Close, contentDescription = "Delete cleaning entry")
+                        }
                         }
                     }
                 }
@@ -328,6 +362,16 @@ fun GunDetailScreen(
         )
     }
 
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("Discard changes?") },
+            text = { Text("You have unsaved changes to this gun.") },
+            confirmButton = { TextButton(onClick = { confirmDiscard = false; stopEditing() }) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+        )
+    }
+
     if (showCleaningDialog) {
         CleaningDialog(
             onDismiss = { showCleaningDialog = false },
@@ -336,6 +380,24 @@ fun GunDetailScreen(
                 showCleaningDialog = false
             },
         )
+    }
+}
+
+@Composable
+private fun GunReadOnlyDetails(vm: GunDetailViewModel) {
+    Text(vm.name, style = MaterialTheme.typography.headlineSmall)
+    if (vm.description.isNotBlank()) Text(vm.description, style = MaterialTheme.typography.titleMedium)
+    if (!vm.active) {
+        Text("Retired: hidden from the gun picker", style = MaterialTheme.typography.bodyMedium)
+    }
+    val interval = vm.cleanInterval.toIntOrNull()
+    Text(
+        if (interval != null) "Clean every $interval rounds" else "No cleaning reminder",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    if (vm.notes.isNotBlank()) {
+        Text("Upgrades & notes", style = MaterialTheme.typography.titleMedium)
+        Text(vm.notes)
     }
 }
 

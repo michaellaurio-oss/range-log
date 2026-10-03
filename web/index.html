@@ -243,15 +243,14 @@ function gunsView() {
   let html = `<div class="row"><span class="grow"></span><button class="btn" data-act="newGun">New gun</button></div><br>`;
   for (const g of guns) {
     const s = gunSummary(g.id);
-    html += `<div class="card ${s.due ? "due" : ""}"><div class="row">
+    html += `<div class="card click ${s.due ? "due" : ""}" data-act="viewGun" data-id="${g.id}"><div class="row">
       <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
         <div class="muted">${esc(g.description)}</div>
         <div class="muted">${s.total.toLocaleString()} rds total · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
         <div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
           ${s.uncounted ? `<span class="muted">· ${s.uncounted} uncounted</span>` : ""}</div>
         <div class="muted">${g.cleanInterval ? (s.due ? "Cleaning due" : "Clean") + " every " + g.cleanInterval + " rds" : "No cleaning reminder"}</div></div>
-      <button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button>
-      <button class="alt" data-act="editGun" data-id="${g.id}">Edit</button></div></div>`;
+      <button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button></div></div>`;
   }
   return html;
 }
@@ -278,10 +277,11 @@ function statsView() {
 function wire(v) {
   const s = $("#search");
   if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
-  v.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => {
+  v.querySelectorAll("[data-act]").forEach((b) => b.onclick = (ev) => {
+    ev.stopPropagation();
     const id = b.dataset.id;
     ({ newSession: () => sessionDialog(null), viewSession: () => sessionView(id), editSession: () => sessionDialog(id),
-       newGun: () => gunDialog(null), editGun: () => gunDialog(id),
+       newGun: () => gunDialog(null), viewGun: () => gunView(id), editGun: () => gunDialog(id),
        cleanToday: () => save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }) })[b.dataset.act]();
   });
 }
@@ -289,6 +289,34 @@ function wire(v) {
 // ---------- dialogs ----------
 const dlg = $("#dlg");
 const closeDlg = () => dlg.close();
+
+function gunView(id) {
+  const g = data.guns.get(id);
+  if (!g) return;
+  const s = gunSummary(id);
+  const cleans = [...data.cleanings.values()].filter((c) => c.gun === id).sort((a, b) => b.date - a.date);
+  const mine = sessionList().filter((x) => (x.guns || []).some((e) => e.gun === id));
+  const roundsIn = (x) => (x.guns || []).filter((e) => e.gun === id).reduce((t, e) => t + (e.rounds ?? 0), 0);
+  dlg.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(g.name)}</h3>
+      <button class="btn" id="editBtn">Edit</button><button class="alt" id="closeBtn">Close</button></div>
+    ${g.description ? `<p><b>${esc(g.description)}</b></p>` : ""}
+    ${g.active ? "" : '<p class="muted">Retired: hidden from the gun picker</p>'}
+    <p class="muted">${g.cleanInterval ? "Clean every " + g.cleanInterval + " rounds" : "No cleaning reminder"}</p>
+    ${g.notes ? `<h2>Upgrades and notes</h2><div style="white-space:pre-wrap">${esc(g.notes)}</div>` : ""}
+    <div class="card ${s.due ? "due" : ""}" style="margin-top:12px">
+      <b>${s.total.toLocaleString()} rounds lifetime</b>
+      <div>${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
+      <div>${s.since.toLocaleString()} rounds since last cleaning${s.uncounted ? " (+" + s.uncounted + " uncounted sessions)" : ""}</div></div>
+    <div class="row"><h2 class="grow">Cleaning log</h2><button class="alt" id="cleanBtn">Cleaned it today</button></div>
+    ${cleans.map((c) => `<div>${fmtDate(c.date)} ${esc(c.notes || "")}</div>`).join("") || '<span class="muted">No cleanings logged yet.</span>'}
+    <h2>Sessions</h2>
+    ${mine.map((x) => `<div class="row" style="padding:4px 0;cursor:pointer" data-sess="${x.id}"><span class="grow">${fmtDate(x.date)}</span><b>${roundsIn(x) || "—"} rds</b></div>`).join("") || '<span class="muted">Not logged in any session yet.</span>'}`;
+  $("#closeBtn").onclick = closeDlg;
+  $("#editBtn").onclick = () => gunDialog(id);
+  $("#cleanBtn").onclick = () => { save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }); closeDlg(); };
+  dlg.querySelectorAll("[data-sess]").forEach((r) => r.onclick = () => sessionView(r.dataset.sess));
+  if (!dlg.open) dlg.showModal();
+}
 
 function gunDialog(id) {
   const g = id ? data.guns.get(id) : { name: "", description: "", notes: "", cleanInterval: 500, active: true };
@@ -304,12 +332,13 @@ function gunDialog(id) {
     <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
     <span class="grow"></span>${id ? '<button class="alt danger" id="del">Delete gun</button>' : ""}</div>`;
   dlg.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { remove("cleanings", b.dataset.del); closeDlg(); });
-  $("#cancel").onclick = closeDlg;
+  $("#cancel").onclick = () => (id ? gunView(id) : closeDlg());
   $("#ok").onclick = () => {
     const name = $("#gName").value.trim(); if (!name) return;
-    save("guns", id || crypto.randomUUID(), { name, description: $("#gDesc").value.trim(), notes: $("#gNotes").value.trim(),
-      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked });
-    closeDlg();
+    const out = { name, description: $("#gDesc").value.trim(), notes: $("#gNotes").value.trim(),
+      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked };
+    save("guns", id || crypto.randomUUID(), out);
+    if (id) { data.guns.set(id, out); gunView(id); } else closeDlg();
   };
   if (id) $("#del").onclick = () => {
     const used = [...data.sessions.values()].some((s) => (s.guns || []).some((e) => e.gun === id));
