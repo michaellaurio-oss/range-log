@@ -109,6 +109,9 @@ private fun GunCard(s: GunSummary, onClick: () -> Unit, onCleaned: (() -> Unit)?
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.padding(2.dp))
+            if (s.gun.notMine) {
+                Text("Not my gun", style = MaterialTheme.typography.bodyMedium)
+            } else {
             val cleaned = s.lastCleaned?.let { "cleaned ${it.short()}" } ?: "no cleaning logged"
             val uncounted = if (s.uncountedSinceCleaning > 0) {
                 " (+${s.uncountedSinceCleaning} session${if (s.uncountedSinceCleaning == 1) "" else "s"} not counted)"
@@ -131,6 +134,7 @@ private fun GunCard(s: GunSummary, onClick: () -> Unit, onCleaned: (() -> Unit)?
             }
             if (onCleaned != null && (s.roundsSinceCleaning > 0 || s.uncountedSinceCleaning > 0)) {
                 TextButton(onClick = onCleaned, contentPadding = PaddingValues(0.dp)) { Text("Cleaned it today") }
+            }
             }
         }
     }

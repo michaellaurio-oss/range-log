@@ -27,7 +27,7 @@ data class GunSummary(
     val uncountedSinceCleaning: Int,
 ) {
     val cleaningDue: Boolean
-        get() = gun.cleanInterval != null && roundsSinceCleaning >= gun.cleanInterval
+        get() = !gun.notMine && gun.cleanInterval != null && roundsSinceCleaning >= gun.cleanInterval
 }
 
 data class PhotoImportResult(val added: Int, val duplicates: Int, val unmatched: List<String>)

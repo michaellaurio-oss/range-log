@@ -84,10 +84,11 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
     // New guns start at 500 rounds between cleanings; it's editable on the gun's screen.
     var cleanInterval by mutableStateOf(if (gunId == 0L) "500" else "")
     var active by mutableStateOf(true)
+    var notMine by mutableStateOf(false)
     var loaded by mutableStateOf(gunId == 0L)
         private set
 
-    private fun snapshot() = listOf(name, description, notes, cleanInterval, active)
+    private fun snapshot() = listOf(name, description, notes, cleanInterval, active, notMine)
     private var baseline: List<Any?> = snapshot()
     val isDirty: Boolean get() = snapshot() != baseline
 
@@ -122,6 +123,7 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
                 notes = g.notes
                 cleanInterval = g.cleanInterval?.toString() ?: ""
                 active = g.active
+                notMine = g.notMine
         }
         baseline = snapshot()
         loaded = true
@@ -140,6 +142,7 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
                 notes = notes.trim(),
                 cleanInterval = cleanInterval.toIntOrNull()?.takeIf { it > 0 },
                 active = active,
+                notMine = notMine,
             )
         )
         baseline = snapshot()
@@ -239,7 +242,18 @@ fun GunDetailScreen(
                 label = { Text("Upgrades & notes") }, minLines = 3,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Not my gun", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "Rented or borrowed. No cleaning log or cleaning reminders.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = vm.notMine, onCheckedChange = { vm.notMine = it })
+            }
+            if (!vm.notMine) OutlinedTextField(
                 value = vm.cleanInterval,
                 onValueChange = { v -> vm.cleanInterval = v.filter(Char::isDigit) },
                 label = { Text("Remind me to clean every … rounds (optional)") },
@@ -272,14 +286,17 @@ fun GunDetailScreen(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text("${s.sessionCount} sessions" + (s.lastShot?.let { " · last shot ${it.pretty()}" } ?: ""))
-                            Text(
+                            if (!vm.notMine) {
+                                Text(
                                 "${s.roundsSinceCleaning.withCommas()} rounds since last cleaning" +
                                     if (s.uncountedSinceCleaning > 0) " (+${s.uncountedSinceCleaning} uncounted sessions)" else ""
                             )
+                            }
                         }
                     }
                 }
 
+                if (!vm.notMine) {
                 HorizontalDivider()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Cleaning log", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -302,6 +319,7 @@ fun GunDetailScreen(
                         }
                         }
                     }
+                }
                 }
 
                 HorizontalDivider()
@@ -390,11 +408,15 @@ private fun GunReadOnlyDetails(vm: GunDetailViewModel) {
     if (!vm.active) {
         Text("Retired: hidden from the gun picker", style = MaterialTheme.typography.bodyMedium)
     }
-    val interval = vm.cleanInterval.toIntOrNull()
-    Text(
-        if (interval != null) "Clean every $interval rounds" else "No cleaning reminder",
-        style = MaterialTheme.typography.bodyMedium,
-    )
+    if (vm.notMine) {
+        Text("Not my gun (rented or borrowed)", style = MaterialTheme.typography.bodyMedium)
+    } else {
+        val interval = vm.cleanInterval.toIntOrNull()
+        Text(
+            if (interval != null) "Clean every $interval rounds" else "No cleaning reminder",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     if (vm.notes.isNotBlank()) {
         Text("Upgrades & notes", style = MaterialTheme.typography.titleMedium)
         Text(vm.notes)
