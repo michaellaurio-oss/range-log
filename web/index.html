@@ -82,7 +82,7 @@
 <div id="status"></div>
 
 <dialog id="dlg"></dialog>
-<dialog id="lb"><img id="lbImg" alt=""><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
+<dialog id="lb"><div class="row" style="justify-content:center;gap:14px"><button class="alt" id="lbPrev" aria-label="Previous photo">‹</button><span id="lbCount" class="muted"></span><button class="alt" id="lbNext" aria-label="Next photo">›</button></div><img id="lbImg" alt="" style="margin-top:10px"><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -130,10 +130,34 @@ function photoData(name) {
 function fillPhotos(root) {
   root.querySelectorAll("img[data-photo]").forEach(async (img) => {
     const src = await photoData(img.dataset.photo);
-    if (src) { img.src = src; img.onclick = () => { $("#lbImg").src = src; $("#lb").showModal(); }; }
+    if (src) {
+      img.src = src;
+      img.onclick = () => {
+        const names = [...img.parentElement.parentElement.querySelectorAll("img[data-photo]")].map((x) => x.dataset.photo);
+        openLightbox(names, names.indexOf(img.dataset.photo));
+      };
+    }
     else img.alt = "not uploaded yet";
   });
 }
+let lbNames = [], lbIdx = 0;
+async function showLb() {
+  $("#lbCount").textContent = (lbIdx + 1) + " of " + lbNames.length;
+  $("#lbImg").src = (await photoData(lbNames[lbIdx])) || "";
+}
+function openLightbox(names, idx) {
+  lbNames = names; lbIdx = Math.max(0, idx);
+  $("#lbPrev").style.visibility = $("#lbNext").style.visibility = names.length > 1 ? "visible" : "hidden";
+  showLb();
+  if (!$("#lb").open) $("#lb").showModal();
+}
+const lbStep = (d) => { lbIdx = (lbIdx + d + lbNames.length) % lbNames.length; showLb(); };
+$("#lbPrev").onclick = () => lbStep(-1);
+$("#lbNext").onclick = () => lbStep(1);
+document.addEventListener("keydown", (e) => {
+  if (!$("#lb").open) return;
+  if (e.key === "ArrowLeft") lbStep(-1); else if (e.key === "ArrowRight") lbStep(1);
+});
 $("#lbClose").onclick = () => $("#lb").close();
 async function shrinkImage(file) {
   const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
