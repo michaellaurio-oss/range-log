@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "765501621718-jg5ouf9qug7t92lmf7cgehvh5qpeg8ac.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.laurio.rangelog",
+            "certificate_hash": "bc5d46a6c6ea762aa8d9bc13f30ad21343b2b84b"
+          }
+        },
+        {
           "client_id": "765501621718-ckach0pg688p6od24teimuvcuavgb6gr.apps.googleusercontent.com",
           "client_type": 3
         }
