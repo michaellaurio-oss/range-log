@@ -138,7 +138,8 @@ function fillPhotos(root) {
     const src = await photoData(img.dataset.photo);
     if (src) {
       img.src = src;
-      img.onclick = () => {
+      img.onclick = (ev) => {
+        ev.stopPropagation();
         const names = [...img.parentElement.parentElement.querySelectorAll("img[data-photo]")].map((x) => x.dataset.photo);
         openLightbox(names, names.indexOf(img.dataset.photo));
       };
