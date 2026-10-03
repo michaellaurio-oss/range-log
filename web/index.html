@@ -53,6 +53,12 @@
   .thumbs img { height: 72px; min-width: 54px; border-radius: 6px; background: var(--line); cursor: zoom-in; display: block; }
   .thumbs .ph button { position: absolute; top: 2px; right: 2px; padding: 0 6px; }
   #lb img { max-width: 100%; max-height: 80vh; display: block; margin: 0 auto; }
+  .lbwrap { position: relative; }
+  .lbnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; border: 0; border-radius: 10px; background: rgba(0,0,0,.45); color: #fff; font-size: 34px; line-height: 1; cursor: pointer; }
+  .lbnav:hover { background: rgba(0,0,0,.7); }
+  #lbPrev { left: 8px; }
+  #lbNext { right: 8px; }
+  #lbCount { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff; font-size: 13px; padding: 2px 10px; border-radius: 10px; }
   #signin { text-align: center; margin-top: 18vh; }
   #status { position: fixed; bottom: 12px; left: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
   .hidden { display: none !important; }
@@ -82,7 +88,7 @@
 <div id="status"></div>
 
 <dialog id="dlg"></dialog>
-<dialog id="lb"><div class="row" style="justify-content:center;gap:14px"><button class="alt" id="lbPrev" aria-label="Previous photo">‹</button><span id="lbCount" class="muted"></span><button class="alt" id="lbNext" aria-label="Next photo">›</button></div><img id="lbImg" alt="" style="margin-top:10px"><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
+<dialog id="lb"><div class="lbwrap"><img id="lbImg" alt=""><button class="lbnav" id="lbPrev" aria-label="Previous photo">‹</button><button class="lbnav" id="lbNext" aria-label="Next photo">›</button><span id="lbCount"></span></div><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
