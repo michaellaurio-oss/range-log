@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range Log</title>
+<style>
+  :root {
+    --bg: #f5f5f2; --card: #ffffff; --ink: #1d1f1c; --muted: #646a62; --line: #dcddd7;
+    --accent: #2f5d3a; --accent-ink: #ffffff; --warn: #fbe4e1; --warn-ink: #8c2a1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151714; --card: #1e211d; --ink: #ecede8; --muted: #9aa097; --line: #343831;
+      --accent: #7fb88c; --accent-ink: #10150f; --warn: #3b1f1b; --warn-ink: #f2b4ab;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; }
+  nav { display: flex; gap: 4px; flex: 1; }
+  nav button { background: none; border: 0; padding: 8px 14px; border-radius: 8px; font: inherit; color: var(--muted); cursor: pointer; }
+  nav button.on { background: var(--accent); color: var(--accent-ink); }
+  #who { color: var(--muted); font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .card.due { background: var(--warn); color: var(--warn-ink); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .card.due .muted { color: inherit; }
+  h2 { font-size: 15px; margin: 22px 0 8px; color: var(--muted); font-weight: 600; }
+  button.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+  button.alt { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  button.danger { color: var(--warn-ink); }
+  input, select, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+  textarea { width: 100%; min-height: 60px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .tile b { font-size: 24px; display: block; }
+  .bar { height: 10px; background: var(--accent); border-radius: 5px; }
+  .barrow { display: grid; grid-template-columns: 120px 1fr 70px; gap: 10px; align-items: center; margin: 5px 0; }
+  .barrow span:last-child { text-align: right; }
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); padding: 18px; width: min(680px, 94vw); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .entry { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; }
+  .strs input { width: 80px; }
+  #signin { text-align: center; margin-top: 18vh; }
+  #status { position: fixed; bottom: 12px; left: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="signin" class="hidden">
+  <h1>Range Log</h1>
+  <p class="muted">Sign in with the same Google account you use on the phone.</p>
+  <button class="btn" id="signinBtn">Sign in with Google</button>
+  <p class="muted" id="signinErr"></p>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Range Log</h1>
+    <nav>
+      <button data-tab="sessions" class="on">Sessions</button>
+      <button data-tab="guns">Guns</button>
+      <button data-tab="stats">Stats</button>
+    </nav>
+    <div id="who"><span id="email"></span><button class="alt" id="signout">Sign out</button></div>
+  </header>
+  <main id="view"></main>
+</div>
+<div id="status"></div>
+
+<dialog id="dlg"></dialog>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, collection, doc, onSnapshot, setDoc, deleteDoc }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const app = initializeApp({
+  apiKey: "AIzaSyAp-HfZP-7pngGUB5rehzegB2iEjRyYh98",
+  authDomain: "range-log-88193.firebaseapp.com",
+  projectId: "range-log-88193",
+});
+const auth = getAuth(app);
+const fs = initializeFirestore(app, { localCache: persistentLocalCache() });
+
+// ---------- state ----------
+let uid = null;
+const data = { guns: new Map(), sessions: new Map(), cleanings: new Map() };
+let tab = "sessions";
+let search = "";
+let unsubs = [];
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtDate = (d) => new Date(d * 86400000).toLocaleDateString(undefined, { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" });
+const isoToDay = (iso) => Math.floor(Date.parse(iso + "T00:00:00Z") / 86400000);
+const dayToIso = (d) => new Date(d * 86400000).toISOString().slice(0, 10);
+const today = () => { const n = new Date(); return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / 86400000); };
+const num = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+const col = (name) => collection(fs, "users", uid, name);
+const ref = (name, id) => doc(fs, "users", uid, name, id);
+const save = (name, id, obj) => setDoc(ref(name, id), obj).catch(showErr);
+const remove = (name, id) => deleteDoc(ref(name, id)).catch(showErr);
+function showErr(e) { $("#status").textContent = "Problem: " + e.message; }
+
+// ---------- sign-in ----------
+$("#signinBtn").onclick = async () => {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { $("#signinErr").textContent = e.message; }
+};
+$("#signout").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, (user) => {
+  unsubs.forEach((u) => u()); unsubs = [];
+  for (const m of Object.values(data)) m.clear();
+  if (!user) { uid = null; $("#signin").classList.remove("hidden"); $("#app").classList.add("hidden"); return; }
+  uid = user.uid;
+  $("#email").textContent = user.email;
+  $("#signin").classList.add("hidden"); $("#app").classList.remove("hidden");
+  for (const name of Object.keys(data)) {
+    unsubs.push(onSnapshot(col(name), { includeMetadataChanges: true }, (snap) => {
+      data[name].clear();
+      snap.forEach((d) => data[name].set(d.id, d.data()));
+      $("#status").textContent = snap.metadata.fromCache ? "Offline – showing saved data" : (snap.metadata.hasPendingWrites ? "Saving…" : "Synced");
+      render();
+    }, showErr));
+  }
+});
+
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+});
+
+// ---------- derived ----------
+const gunList = () => [...data.guns].map(([id, g]) => ({ id, ...g }));
+const sessionList = () => [...data.sessions].map(([id, s]) => ({ id, ...s })).sort((a, b) => b.date - a.date);
+const sessionRounds = (s) => (s.guns || []).reduce((t, e) => t + (e.rounds ?? 0), 0);
+const gunName = (id) => data.guns.get(id)?.name ?? "(deleted gun)";
+
+function gunSummary(id) {
+  const g = data.guns.get(id);
+  const cleans = [...data.cleanings.values()].filter((c) => c.gun === id).map((c) => c.date);
+  const last = cleans.length ? Math.max(...cleans) : null;
+  let total = 0, since = 0, count = 0, lastShot = null, uncounted = 0;
+  for (const s of data.sessions.values()) {
+    const mine = (s.guns || []).filter((e) => e.gun === id);
+    if (!mine.length) continue;
+    count++;
+    lastShot = Math.max(lastShot ?? 0, s.date);
+    for (const e of mine) {
+      total += e.rounds ?? 0;
+      if (last === null || s.date > last) { since += e.rounds ?? 0; if (e.rounds == null) uncounted++; }
+    }
+  }
+  const due = g.cleanInterval != null && since >= g.cleanInterval;
+  return { total, since, count, lastShot, last, uncounted, due };
+}
+
+// ---------- views ----------
+function render() {
+  if (!uid) return;
+  const v = $("#view");
+  if (tab === "sessions") v.innerHTML = sessionsView();
+  else if (tab === "guns") v.innerHTML = gunsView();
+  else v.innerHTML = statsView();
+  wire(v);
+}
+
+function sessionsView() {
+  const q = search.toLowerCase();
+  const list = sessionList().filter((s) => !q ||
+    [s.location, s.notes, fmtDate(s.date), ...(s.guns || []).map((e) => gunName(e.gun) + " " + (e.notes || ""))]
+      .join(" ").toLowerCase().includes(q));
+  let html = `<div class="row"><input id="search" class="grow" placeholder="Search sessions" value="${esc(search)}">
+    <button class="btn" data-act="newSession">New session</button></div>`;
+  let year = null;
+  for (const s of list) {
+    const y = new Date(s.date * 86400000).getUTCFullYear();
+    if (y !== year) { year = y; html += `<h2>${y}</h2>`; }
+    const names = (s.guns || []).map((e) => `${esc(gunName(e.gun))}${e.rounds != null ? " " + e.rounds : ""}`).join(" · ");
+    html += `<div class="card"><div class="row">
+      <div class="grow"><b>${fmtDate(s.date)}</b> ${s.location ? "· " + esc(s.location) : ""}
+        <div class="muted">${names || "No guns logged"}</div>
+        ${s.notes ? `<div class="muted">${esc(s.notes)}</div>` : ""}
+        ${(s.photos || []).length ? `<div class="muted">${s.photos.length} photo(s) on the phone</div>` : ""}</div>
+      <div><b>${sessionRounds(s) || ""}</b> <span class="muted">${sessionRounds(s) ? "rds" : ""}</span></div>
+      <button class="alt" data-act="editSession" data-id="${s.id}">Edit</button></div></div>`;
+  }
+  if (!list.length) html += `<p class="muted">No sessions yet.</p>`;
+  return html;
+}
+
+function gunsView() {
+  const guns = gunList().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
+  let html = `<div class="row"><span class="grow"></span><button class="btn" data-act="newGun">New gun</button></div><br>`;
+  for (const g of guns) {
+    const s = gunSummary(g.id);
+    html += `<div class="card ${s.due ? "due" : ""}"><div class="row">
+      <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
+        <div class="muted">${esc(g.description)}</div>
+        <div class="muted">${s.total.toLocaleString()} rds total · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
+        <div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
+          ${s.uncounted ? `<span class="muted">· ${s.uncounted} uncounted</span>` : ""}</div>
+        <div class="muted">${g.cleanInterval ? (s.due ? "Cleaning due" : "Clean") + " every " + g.cleanInterval + " rds" : "No cleaning reminder"}</div></div>
+      <button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button>
+      <button class="alt" data-act="editGun" data-id="${g.id}">Edit</button></div></div>`;
+  }
+  return html;
+}
+
+function statsView() {
+  const sessions = sessionList();
+  const total = sessions.reduce((t, s) => t + sessionRounds(s), 0);
+  const year = new Date().getFullYear();
+  const byYear = {};
+  for (const s of sessions) { const y = new Date(s.date * 86400000).getUTCFullYear(); byYear[y] = (byYear[y] || 0) + sessionRounds(s); }
+  const counted = sessions.filter((s) => sessionRounds(s) > 0);
+  const byGun = gunList().map((g) => [g.name, gunSummary(g.id).total]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  const bars = (rows) => { const max = Math.max(1, ...rows.map((r) => r[1])); return rows.map(([k, v]) =>
+    `<div class="barrow"><span>${esc(k)}</span><div><div class="bar" style="width:${(v / max) * 100}%"></div></div><span>${v.toLocaleString()}</span></div>`).join(""); };
+  return `<div class="grid">
+    <div class="card tile"><span class="muted">Rounds, all time</span><b>${total.toLocaleString()}</b></div>
+    <div class="card tile"><span class="muted">Sessions</span><b>${sessions.length}</b></div>
+    <div class="card tile"><span class="muted">Rounds in ${year}</span><b>${(byYear[year] || 0).toLocaleString()}</b></div>
+    <div class="card tile"><span class="muted">Avg rounds / session</span><b>${counted.length ? Math.floor(total / counted.length) : 0}</b></div></div>
+    <h2>Rounds by year</h2><div class="card">${bars(Object.entries(byYear).sort())}</div>
+    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>`;
+}
+
+function wire(v) {
+  const s = $("#search");
+  if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
+  v.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => {
+    const id = b.dataset.id;
+    ({ newSession: () => sessionDialog(null), editSession: () => sessionDialog(id),
+       newGun: () => gunDialog(null), editGun: () => gunDialog(id),
+       cleanToday: () => save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }) })[b.dataset.act]();
+  });
+}
+
+// ---------- dialogs ----------
+const dlg = $("#dlg");
+const closeDlg = () => dlg.close();
+
+function gunDialog(id) {
+  const g = id ? data.guns.get(id) : { name: "", description: "", notes: "", cleanInterval: 500, active: true };
+  const cleans = id ? [...data.cleanings].filter(([, c]) => c.gun === id).sort((a, b) => b[1].date - a[1].date) : [];
+  dlg.innerHTML = `<h3>${id ? "Edit gun" : "New gun"}</h3>
+    <label>Short name</label><input id="gName" value="${esc(g.name)}">
+    <label>Full make / model</label><input id="gDesc" style="width:100%" value="${esc(g.description)}">
+    <label>Upgrades and notes</label><textarea id="gNotes">${esc(g.notes)}</textarea>
+    <label>Clean every (rounds, blank = no reminder)</label><input id="gInt" type="number" min="1" value="${g.cleanInterval ?? ""}">
+    <label><input type="checkbox" id="gActive" ${g.active ? "checked" : ""}> Active (shows in the gun picker)</label>
+    ${id ? `<label>Cleaning log</label>${cleans.map(([cid, c]) => `<div class="row">${fmtDate(c.date)} ${esc(c.notes || "")}
+      <button class="alt danger" data-del="${cid}">Delete</button></div>`).join("") || '<span class="muted">None yet</span>'}` : ""}
+    <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
+    <span class="grow"></span>${id ? '<button class="alt danger" id="del">Delete gun</button>' : ""}</div>`;
+  dlg.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { remove("cleanings", b.dataset.del); closeDlg(); });
+  $("#cancel").onclick = closeDlg;
+  $("#ok").onclick = () => {
+    const name = $("#gName").value.trim(); if (!name) return;
+    save("guns", id || crypto.randomUUID(), { name, description: $("#gDesc").value.trim(), notes: $("#gNotes").value.trim(),
+      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked });
+    closeDlg();
+  };
+  if (id) $("#del").onclick = () => {
+    const used = [...data.sessions.values()].some((s) => (s.guns || []).some((e) => e.gun === id));
+    if (used) return alert("This gun has sessions logged. Retire it instead (untick Active).");
+    if (!confirm("Delete this gun?")) return;
+    cleans.forEach(([cid]) => remove("cleanings", cid)); remove("guns", id); closeDlg();
+  };
+  dlg.showModal();
+}
+
+function sessionDialog(id) {
+  const s = id ? structuredClone(data.sessions.get(id)) : { date: today(), location: "", notes: "", guns: [], photos: [] };
+  s.guns ||= []; s.photos ||= [];
+  const guns = gunList().sort((a, b) => a.name.localeCompare(b.name));
+  const draw = () => {
+    dlg.innerHTML = `<h3>${id ? "Edit session" : "New session"}</h3>
+      <div class="row"><div><label>Date</label><input type="date" id="sDate" value="${dayToIso(s.date)}"></div>
+      <div class="grow"><label>Location</label><input id="sLoc" style="width:100%" value="${esc(s.location)}"></div></div>
+      <label>Notes</label><textarea id="sNotes">${esc(s.notes)}</textarea>
+      ${s.guns.map((e, i) => `<div class="entry"><div class="row">
+        <select data-i="${i}" data-f="gun"><option value="">Pick a gun…</option>
+          ${guns.filter((g) => g.active || g.id === e.gun).map((g) => `<option value="${g.id}" ${g.id === e.gun ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>
+        <input type="number" min="0" placeholder="rounds" style="width:90px" data-i="${i}" data-f="rounds" value="${e.rounds ?? ""}">
+        <input class="grow" placeholder="notes" data-i="${i}" data-f="notes" value="${esc(e.notes || "")}">
+        <button class="alt danger" data-rm="${i}">Remove</button></div>
+        <div class="strs">${(e.strings || []).map((t, j) => `<div class="row" style="margin-top:6px">
+          <input type="number" min="0" placeholder="rds" data-i="${i}" data-j="${j}" data-f="srounds" value="${t.rounds ?? ""}"> @
+          <input type="number" min="0" step="any" placeholder="yds" data-i="${i}" data-j="${j}" data-f="syards" value="${t.yards ?? ""}">
+          <input class="grow" placeholder="notes" data-i="${i}" data-j="${j}" data-f="snotes" value="${esc(t.notes || "")}">
+          <button class="alt" data-rms="${i},${j}">×</button></div>`).join("")}
+          <button class="alt" style="margin-top:6px" data-adds="${i}">+ String (rds @ yds)</button></div></div>`).join("")}
+      <button class="alt" id="addGun">+ Add gun</button>
+      ${s.photos.length ? `<p class="muted">${s.photos.length} photo(s) attached on the phone (kept when you save).</p>` : ""}
+      <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
+      <span class="grow"></span>${id ? '<button class="alt danger" id="del">Delete session</button>' : ""}</div>`;
+    dlg.querySelectorAll("[data-f]").forEach((el) => el.onchange = () => {
+      const e = s.guns[el.dataset.i], f = el.dataset.f, j = el.dataset.j;
+      if (f === "gun") e.gun = el.value; else if (f === "rounds") e.rounds = num(el.value); else if (f === "notes") e.notes = el.value;
+      else if (f === "srounds") e.strings[j].rounds = num(el.value); else if (f === "syards") e.strings[j].yards = parseFloat(el.value) || 0;
+      else if (f === "snotes") e.strings[j].notes = el.value;
+    });
+    const keep = () => { s.date = isoToDay($("#sDate").value) || s.date; s.location = $("#sLoc").value; s.notes = $("#sNotes").value; };
+    dlg.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { keep(); s.guns.splice(b.dataset.rm, 1); draw(); });
+    dlg.querySelectorAll("[data-adds]").forEach((b) => b.onclick = () => { keep(); (s.guns[b.dataset.adds].strings ||= []).push({ rounds: null, yards: 0, notes: "" }); draw(); });
+    dlg.querySelectorAll("[data-rms]").forEach((b) => b.onclick = () => { keep(); const [i, j] = b.dataset.rms.split(","); s.guns[i].strings.splice(j, 1); draw(); });
+    $("#addGun").onclick = () => { keep(); s.guns.push({ gun: "", rounds: null, notes: "", strings: [] }); draw(); };
+    $("#cancel").onclick = closeDlg;
+    $("#ok").onclick = () => {
+      keep();
+      if (s.guns.some((e) => !e.gun)) return alert("Pick a gun for each entry, or remove the empty one.");
+      const out = { date: s.date, location: s.location.trim(), notes: s.notes.trim(), photos: s.photos,
+        guns: s.guns.map((e) => {
+          const strings = (e.strings || []).filter((t) => t.rounds != null || t.yards || t.notes).map((t) => ({ rounds: t.rounds ?? 0, yards: t.yards || 0, notes: (t.notes || "").trim() }));
+          const sum = strings.reduce((a, t) => a + t.rounds, 0);
+          return { gun: e.gun, rounds: e.rounds ?? (sum > 0 ? sum : null), notes: (e.notes || "").trim(), strings };
+        }) };
+      save("sessions", id || crypto.randomUUID(), out); closeDlg();
+    };
+    if (id) $("#del").onclick = () => { if (confirm("Delete this session?")) { remove("sessions", id); closeDlg(); } };
+  };
+  draw(); dlg.showModal();
+}
+</script>
+</body>
+</html>
