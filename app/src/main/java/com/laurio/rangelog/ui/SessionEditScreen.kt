@@ -8,7 +8,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +75,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -413,13 +417,35 @@ fun SessionEditScreen(
     }
 
     viewingPhoto?.let { name ->
-        Dialog(onDismissRequest = { viewingPhoto = null }) {
-            AsyncImage(
-                model = vm.repo.photoFile(name),
-                contentDescription = "Target photo",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().clickable { viewingPhoto = null },
-            )
+        val photos = draft.photos
+        val start = photos.indexOfFirst { it.fileName == name }.coerceAtLeast(0)
+        val pager = rememberPagerState(initialPage = start) { photos.size }
+        Dialog(
+            onDismissRequest = { viewingPhoto = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(Modifier.fillMaxSize().clickable { viewingPhoto = null }) {
+                HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
+                    AsyncImage(
+                        model = vm.repo.photoFile(photos[page].fileName),
+                        contentDescription = "Target photo",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                    )
+                }
+                if (photos.size > 1) {
+                    Text(
+                        "${pager.currentPage + 1} of ${photos.size}",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(16.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f))
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
+            }
         }
     }
 }
