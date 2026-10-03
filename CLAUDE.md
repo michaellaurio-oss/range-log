@@ -7,11 +7,14 @@ Explain build and install steps plainly and prefer doing things over telling him
 
 ## Current status (read first)
 
-- **Builds cleanly** (`assembleDebug`, first build 2026-09-29, no errors or warnings).
-  **Not yet installed or tested on his phone.**
-- Next: install with `adb install -r app/build/outputs/apk/debug/app-debug.apk` (USB
-  debugging on) → smoke test: first launch loads the history, add and edit a session with
-  a camera photo, check the Guns tab counts, export and restore a backup.
+- **Builds cleanly** (`assembleDebug`). Installed on Michael's phone (Samsung, adb id `R5CY20N34VZ`)
+  and in daily trial use as of 2026-10-03. Cloud sync works end to end: phone signs in with Google
+  and the web page at https://the-laurios.com/range-app/ shows the same sessions. Photo sync (below)
+  was built right after and is not yet confirmed by him.
+- Install/update: `adb install -r app/build/outputs/apk/debug/app-debug.apk` (keeps data; Room
+  migrations run). Before risky changes copy the DB off the phone with
+  `adb exec-out run-as com.laurio.rangelog cat databases/rangelog.db`. A copy from 2026-10-03 is in
+  `phone-db-backup/` (git-ignored).
 - Toolchain (portable, no Android Studio, not on PATH): JDK 17 at
   `D:\Users\micha\Android\jdk-17`, SDK at `D:\Users\micha\Android\sdk` (platform 35,
   build-tools 35.0.0, platform-tools/adb). `local.properties` points at the SDK. Set
@@ -27,25 +30,44 @@ Explain build and install steps plainly and prefer doing things over telling him
 - If you bump versions, keep them consistent: Kotlin, the compose compiler plugin and
   KSP must match (`2.0.21` / `2.0.21-1.0.28`).
 
-## Cloud sync (added 2026-10-03, built but not yet tested on a device)
+## Cloud sync (added 2026-10-03)
 
-- Firestore layout: `users/{uid}/{guns|sessions|cleanings}/{syncId}`; a session doc nests its gun
-  entries, strings and photo names. `syncId` columns were added to guns, sessions, cleanings
-  (DB version 2, `MIGRATION_1_2`). `data/CloudSync.kt` does both directions; Repository wraps each
-  local write in `sync.exclusive {}` and pushes the doc. Rules are in `firestore.rules` (paste into
-  the Firebase console). Photo image files are not synced (only their names).
+- Firebase project `range-log-88193` (his Google account). Firestore layout:
+  `users/{uid}/{guns|sessions|cleanings|photos}/{id}`. A session doc nests its gun entries, strings and
+  photo names. `syncId` columns on guns, sessions and cleanings (`MIGRATION_1_2`); `notMine` on guns
+  (`MIGRATION_2_3`). DB is at version 3. Rules are in `firestore.rules` (published in the console).
+- `data/CloudSync.kt` does both directions. Repository wraps each local write in
+  `sync.exclusive {}` and pushes the doc. Remote changes arrive as snapshot events (own pending
+  writes are skipped). Editing code must keep the stored `syncId` (see `saveGun`, `saveSessionRows`).
+- Photos: each image is shrunk to a ~1280px JPEG (under 600 KB) and stored base64 in
+  `users/{uid}/photos/{fileName}`, because Firebase Storage needs a billing plan. Phone uploads
+  after session saves and on startup; web page can add/remove photos; phone downloads missing files.
 - First sign-in: cloud empty -> upload phone; phone empty -> download; both have data -> user picks
-  in the Sync card (Stats tab).
-- Desktop page: `web/index.html`, started with `web/Start Range Log Web.ps1` (serves localhost:8080).
-- `app/google-services.json` currently has no Android OAuth client (only the web one); if Google
-  sign-in fails on the phone, re-download it after confirming the SHA-1 is saved in Firebase.
+  in the Sync card (Stats tab). Restoring a backup makes the phone's data the truth (replaces cloud).
+- Google sign-in uses Credential Manager. It needs the debug SHA-1 registered in Firebase and a fresh
+  `app/google-services.json` (error 16 means the Android OAuth client was missing). Debug SHA-1:
+  `BC:5D:46:A6:C6:EA:76:2A:A8:D9:BC:13:F3:0A:D2:13:43:B2:B8:4B`.
+- Web page: `web/index.html` (single file, Firebase JS SDK from gstatic). Local use:
+  `web/Start Range Log Web.ps1` (localhost:8080). Live copy: `.github/workflows/deploy-web.yml` FTPs
+  `web/` to the-laurios.com/range-app on every push that touches `web/` (repo secrets FTP_SERVER,
+  FTP_USERNAME, FTP_PASSWORD, FTP_DIR). `the-laurios.com` must stay in Firebase Authorized domains.
+- Repo: https://github.com/michaellaurio-oss/range-log (private, branch `main`). Commit and push when asked.
+- Not synced: photo captions are stored but never edited anywhere; reminders are local to the phone.
+
+## Behavior decisions (2026-10-03)
+
+- Cleaning reminder: a local notification when saving a session pushes a gun to or past its
+  `cleanInterval` (`CleaningReminders.kt`); new guns default to 500 rounds, seed guns are set to 500.
+- Sessions and guns open in read-only view mode with an Edit button (phone and web). Cards on the web
+  open on click. Photos open in a viewer: swipe on the phone, on-image arrows and arrow keys on the web.
+- Guns have "Not my gun" (`notMine`) for rented/borrowed ones: no cleaning log, reminders or due state.
 
 ## Stack
 
 Kotlin 2.0.21 · AGP 8.7.3 · Gradle 8.11.1 (wrapper included) · JDK 17 · compileSdk/targetSdk 35,
 minSdk 26 · Jetpack Compose (BOM 2024.12.01, Material 3, material-icons-core only, no
 extended icons) · Navigation Compose 2.8.5 · Room 2.6.1 via KSP · kotlinx.serialization 1.7.3
-· Coil 2.7.0. No DI framework: `RangeLogApp.repository` is a lazy singleton, and ViewModels
+· Coil 2.7.0 · Firebase BOM 33.7.0 (auth, firestore) + Credential Manager · exifinterface. No DI framework: `RangeLogApp.repository` is a lazy singleton, and ViewModels
 are `AndroidViewModel`s created with the default factory (with `SavedStateHandle` for nav args).
 
 ## Layout
@@ -57,9 +79,10 @@ app/src/main/java/com/laurio/rangelog/
   data/
     Entities.kt         Room entities (also @Serializable), relation POJOs, Backup
     RangeDao.kt         all queries
-    AppDatabase.kt      Room DB "rangelog.db", version 1, exportSchema=false
+    AppDatabase.kt      Room DB "rangelog.db", version 3, migrations, exportSchema=false
     Repository.kt       business logic: save/delete session, gun summaries,
                         photos, JSON backup/restore, first-launch seeding
+    CloudSync.kt        Firestore two-way sync, Google sign-in, photo up/download
     Drafts.kt           editor state (SessionDraft/GunEntryDraft/StringDraft/PhotoDraft)
   ui/
     Nav.kt              bottom tabs (sessions, guns, stats) + routes session/{id}, gun/{id}
@@ -67,9 +90,9 @@ app/src/main/java/com/laurio/rangelog/
     MainViewModel.kt    activity-scoped: sessions, gun summaries, snackbar messages,
                         export/import, triggers seeding
     SessionsScreen.kt   list grouped by year, search
-    SessionEditScreen.kt  SessionEditViewModel + editor (guns, distances, notes, photos)
+    SessionEditScreen.kt  SessionEditViewModel; view mode + editor (guns, distances, notes, photos)
     GunsScreen.kt       gun cards with rounds since cleaning, "Cleaned it today"
-    GunDetailScreen.kt  GunDetailViewModel + gun edit, cleaning log, sessions for the gun
+    GunDetailScreen.kt  GunDetailViewModel; view mode + gun edit, cleaning log, sessions for the gun
     StatsScreen.kt      totals, bar lists, photo import by filename, backup export/restore
                         (Repository.importPhotosByName: files named YYYYMMDD##.jpg go to the session
                         on that date, stored as <name>.jpg so re-importing skips duplicates; if two
@@ -78,11 +101,13 @@ app/src/main/java/com/laurio/rangelog/
     Theme.kt, Format.kt date/number helpers
 app/src/main/assets/seed.json   preloaded history (Backup JSON format)
 tools/make_seed.py              regenerates seed.json from hand-transcribed records
+web/index.html                 desktop web page (Firebase JS), deployed to the-laurios.com/range-app
+firestore.rules                 Firestore security rules (own data only)
 ```
 
 ## Data model
 
-- `Gun(id, name, description, notes, cleanInterval?, active)`. `name` is the short label
+- `Gun(id, name, description, notes, cleanInterval?, active, notMine, syncId)`. `name` is the short label
   he uses ("SP01", "HCP", "G19.3"). `notes` holds upgrades and mods. Retired
   (`active=false`) guns are hidden from the picker but keep their history.
 - `Session(id, date, location, notes)`. **Dates are `LocalDate.toEpochDay()` longs.**
@@ -134,7 +159,7 @@ records file. Data decisions already made:
   keyboards for counts, and nothing that needs a network connection.
 - Data syncs through his own Firebase project `range-log-88193` (Firestore + Google sign-in), added
   2026-10-03 at his request, so the log works on phone and desktop. Local Room DB stays the
-  offline copy. No analytics. Backup is still a user-chosen JSON file (Storage Access Framework).
+  offline copy. No analytics. Backup is still a user-chosen JSON file (Storage Access Framework). Plain wording; the phone UI and the web page should stay in step.
 - Plain wording in the UI ("rds", "yds", "Cleaned it today").
 - Verify changes with a build (and on the phone when possible) before saying they work.
 
@@ -142,4 +167,4 @@ records file. Data decisions already made:
 
 Per-gun ammo type/brand, drill templates (e.g. his silhouette drill), accuracy scoring or
 group size, charts over time, photo annotation, including photos in backups (zip), home
-screen widget, Google Drive auto-backup.
+screen widget, Google Drive auto-backup, time-based (months) cleaning reminders, arrows on the phone photo viewer, view mode for cleaning entries.
