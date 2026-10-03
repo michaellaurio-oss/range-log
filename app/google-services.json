@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "765501621718",
+    "project_id": "range-log-88193",
+    "storage_bucket": "range-log-88193.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:765501621718:android:419e443ead2798d3cfd077",
+        "android_client_info": {
+          "package_name": "com.laurio.rangelog"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "765501621718-ckach0pg688p6od24teimuvcuavgb6gr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAp-HfZP-7pngGUB5rehzegB2iEjRyYh98"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "765501621718-ckach0pg688p6od24teimuvcuavgb6gr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

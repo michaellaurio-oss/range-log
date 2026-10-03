@@ -1,0 +1,1072 @@
+{
+  "format": "rangelog-backup",
+  "version": 1,
+  "guns": [
+    {
+      "id": 1,
+      "name": "SP01",
+      "description": "CZ 75 SP-01",
+      "notes": "Cajun Gunworks upgrade (12/2024)",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "PCR",
+      "description": "CZ 75D PCR",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 3,
+      "name": "1911",
+      "description": "Kimber 1911 TLE II .45",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 4,
+      "name": "G19.2",
+      "description": "Glock 19 Gen 2",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 5,
+      "name": "G19.3",
+      "description": "Glock 19 Gen 3",
+      "notes": "Glockstore heavy tungsten guide rod assembly (Aug 2024)",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 6,
+      "name": "HCP",
+      "description": "Hellcat Pro",
+      "notes": "Apex trigger upgrade (12/2024)",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 7,
+      "name": ".357",
+      "description": "Colt Trooper Mk III .357",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 8,
+      "name": ".38",
+      "description": ".38 Special",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 9,
+      "name": "Mossberg 500",
+      "description": "Mossberg 500 shotgun",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 10,
+      "name": "Mossberg 590",
+      "description": "Mossberg 590 shotgun",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 11,
+      "name": "Marlin",
+      "description": "Marlin lever action (.357 / .38)",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    },
+    {
+      "id": 12,
+      "name": "CZ 75B",
+      "description": "CZ 75B",
+      "notes": "",
+      "cleanInterval": 500,
+      "active": true
+    }
+  ],
+  "sessions": [
+    {
+      "id": 1,
+      "date": 20704,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 2,
+      "date": 20697,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 3,
+      "date": 20659,
+      "location": "BLM land, Nevada",
+      "notes": "Shooting on BLM land in Nevada with Dusty.\nAlso shot: Mossberg 500 (clay), Marlin lever action, Ruger American (steel @ 175 yds), Sig 226, Sig 320, .22 bolt action."
+    },
+    {
+      "id": 4,
+      "date": 20592,
+      "location": "",
+      "notes": "Challenge: clean hit on each bubble.\nTarget 1 (HCP & SP01): did it with 31 shots.\nTarget 2 (SP01): left 2 open on 69 shots."
+    },
+    {
+      "id": 5,
+      "date": 20576,
+      "location": "",
+      "notes": "Shooting with Bob."
+    },
+    {
+      "id": 6,
+      "date": 20565,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 7,
+      "date": 20557,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 8,
+      "date": 20344,
+      "location": "",
+      "notes": "Recorded as two entries: SP01 (90), and SP01 (40) + G19.3 (80)."
+    },
+    {
+      "id": 9,
+      "date": 20321,
+      "location": "",
+      "notes": "Zeroing red dot on HCP. Gave up, returned."
+    },
+    {
+      "id": 10,
+      "date": 20306,
+      "location": "",
+      "notes": "Not unhappy with the 17.5 yds."
+    },
+    {
+      "id": 11,
+      "date": 20291,
+      "location": "",
+      "notes": "meh"
+    },
+    {
+      "id": 12,
+      "date": 20284,
+      "location": "",
+      "notes": "So, despite appearances, G19 much more accurate at 10 than HCP."
+    },
+    {
+      "id": 13,
+      "date": 20277,
+      "location": "",
+      "notes": "90% of the 15yd hits on target were from last 2 (of 4) mags."
+    },
+    {
+      "id": 14,
+      "date": 20270,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 15,
+      "date": 20220,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 16,
+      "date": 20184,
+      "location": "",
+      "notes": "CCW certification. 10 shots each from 3, 5, 7 yards, both pistols. (I passed)"
+    },
+    {
+      "id": 17,
+      "date": 20165,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 18,
+      "date": 20158,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 19,
+      "date": 20119,
+      "location": "",
+      "notes": "Breathing makes a huge difference."
+    },
+    {
+      "id": 20,
+      "date": 20098,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 21,
+      "date": 20097,
+      "location": "",
+      "notes": "***Don't try to strangle the guns with a deathgrip***\nOn HCP at 5yds (#3), I relaxed grip a bit and improved, applied to 7yd (#4) and DAMN."
+    },
+    {
+      "id": 22,
+      "date": 20067,
+      "location": "",
+      "notes": "HCP trigger upgrade. Cajun Gunworks upgrade. Cajun Gunworks is amazing."
+    },
+    {
+      "id": 23,
+      "date": 20042,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 24,
+      "date": 20036,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 25,
+      "date": 19976,
+      "location": "",
+      "notes": "20 each target. What the fuck happened @ 10 yards?!"
+    },
+    {
+      "id": 26,
+      "date": 19963,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 27,
+      "date": 19956,
+      "location": "",
+      "notes": "HCP: numbers indicate order of targets."
+    },
+    {
+      "id": 28,
+      "date": 19944,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 29,
+      "date": 19928,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 30,
+      "date": 19913,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 31,
+      "date": 19851,
+      "location": "",
+      "notes": "Loved the CZ (fit, low recoil, but horrible sights). Gonna be getting a CZ SP01 Tactical (edit: not CA compliant)."
+    },
+    {
+      "id": 32,
+      "date": 19837,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 33,
+      "date": 19835,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 34,
+      "date": 19830,
+      "location": "",
+      "notes": ""
+    },
+    {
+      "id": 35,
+      "date": 19828,
+      "location": "",
+      "notes": "Lots of duds in the old ammo."
+    }
+  ],
+  "sessionGuns": [
+    {
+      "id": 1,
+      "sessionId": 1,
+      "gunId": 11,
+      "rounds": 100,
+      "notes": "7 @ 10y (.357), 50 @ 20y (.38), 7 @ 10y (.357), 7 @ 10y (.357), 28 @ 20y (.357)"
+    },
+    {
+      "id": 2,
+      "sessionId": 2,
+      "gunId": 9,
+      "rounds": 10,
+      "notes": ""
+    },
+    {
+      "id": 3,
+      "sessionId": 2,
+      "gunId": 5,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 4,
+      "sessionId": 2,
+      "gunId": 3,
+      "rounds": 56,
+      "notes": ""
+    },
+    {
+      "id": 5,
+      "sessionId": 3,
+      "gunId": 1,
+      "rounds": 151,
+      "notes": ""
+    },
+    {
+      "id": 6,
+      "sessionId": 3,
+      "gunId": 3,
+      "rounds": 120,
+      "notes": ""
+    },
+    {
+      "id": 7,
+      "sessionId": 3,
+      "gunId": 6,
+      "rounds": 30,
+      "notes": ""
+    },
+    {
+      "id": 8,
+      "sessionId": 4,
+      "gunId": 6,
+      "rounds": 61,
+      "notes": ""
+    },
+    {
+      "id": 9,
+      "sessionId": 4,
+      "gunId": 1,
+      "rounds": 99,
+      "notes": ""
+    },
+    {
+      "id": 10,
+      "sessionId": 5,
+      "gunId": 5,
+      "rounds": 120,
+      "notes": ""
+    },
+    {
+      "id": 11,
+      "sessionId": 5,
+      "gunId": 1,
+      "rounds": 140,
+      "notes": ""
+    },
+    {
+      "id": 12,
+      "sessionId": 5,
+      "gunId": 3,
+      "rounds": 128,
+      "notes": ""
+    },
+    {
+      "id": 13,
+      "sessionId": 6,
+      "gunId": 9,
+      "rounds": 20,
+      "notes": "#00 buck. First 2 shots @ 15y missed COMPLETELY. Aiming low to get these hits."
+    },
+    {
+      "id": 14,
+      "sessionId": 6,
+      "gunId": 3,
+      "rounds": 85,
+      "notes": ""
+    },
+    {
+      "id": 15,
+      "sessionId": 6,
+      "gunId": 2,
+      "rounds": 100,
+      "notes": "Practiced shooting half-cocked (DA)."
+    },
+    {
+      "id": 16,
+      "sessionId": 7,
+      "gunId": 6,
+      "rounds": 185,
+      "notes": "Shooting pretty fast. On silhouette: body/body/head x 3, then shoot hostage w/ last shot."
+    },
+    {
+      "id": 17,
+      "sessionId": 7,
+      "gunId": 1,
+      "rounds": 185,
+      "notes": "Shooting pretty fast. On silhouette: body/body/head x 3, then shoot hostage w/ last shot."
+    },
+    {
+      "id": 18,
+      "sessionId": 7,
+      "gunId": 9,
+      "rounds": 10,
+      "notes": "#00 buck. Orig stock feels too long. Need to remember to cycle after shots."
+    },
+    {
+      "id": 19,
+      "sessionId": 8,
+      "gunId": 1,
+      "rounds": 130,
+      "notes": ""
+    },
+    {
+      "id": 20,
+      "sessionId": 8,
+      "gunId": 5,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 21,
+      "sessionId": 9,
+      "gunId": 3,
+      "rounds": 78,
+      "notes": "AWFUL. Too embarrassed to post pics."
+    },
+    {
+      "id": 22,
+      "sessionId": 9,
+      "gunId": 6,
+      "rounds": 30,
+      "notes": ""
+    },
+    {
+      "id": 23,
+      "sessionId": 10,
+      "gunId": 1,
+      "rounds": 330,
+      "notes": ""
+    },
+    {
+      "id": 24,
+      "sessionId": 11,
+      "gunId": 3,
+      "rounds": 78,
+      "notes": ""
+    },
+    {
+      "id": 25,
+      "sessionId": 11,
+      "gunId": 2,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 26,
+      "sessionId": 12,
+      "gunId": 6,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 27,
+      "sessionId": 12,
+      "gunId": 4,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 28,
+      "sessionId": 13,
+      "gunId": 1,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 29,
+      "sessionId": 13,
+      "gunId": 2,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 30,
+      "sessionId": 14,
+      "gunId": 3,
+      "rounds": null,
+      "notes": "FTF solved by smacking slide forward."
+    },
+    {
+      "id": 31,
+      "sessionId": 15,
+      "gunId": 3,
+      "rounds": null,
+      "notes": "FTF with one of the extended 1911 mags."
+    },
+    {
+      "id": 32,
+      "sessionId": 15,
+      "gunId": 2,
+      "rounds": null,
+      "notes": "Trigger finger hurt on the PCR."
+    },
+    {
+      "id": 33,
+      "sessionId": 16,
+      "gunId": 5,
+      "rounds": 30,
+      "notes": ""
+    },
+    {
+      "id": 34,
+      "sessionId": 16,
+      "gunId": 6,
+      "rounds": 30,
+      "notes": ""
+    },
+    {
+      "id": 35,
+      "sessionId": 17,
+      "gunId": 5,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 36,
+      "sessionId": 17,
+      "gunId": 7,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 37,
+      "sessionId": 18,
+      "gunId": 1,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 38,
+      "sessionId": 18,
+      "gunId": 6,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 39,
+      "sessionId": 19,
+      "gunId": 5,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 40,
+      "sessionId": 19,
+      "gunId": 6,
+      "rounds": null,
+      "notes": "Difference from 7A to 7B: right thumb stiff and off slide. Same on 7C, but not same results."
+    },
+    {
+      "id": 41,
+      "sessionId": 20,
+      "gunId": 10,
+      "rounds": null,
+      "notes": "Painful"
+    },
+    {
+      "id": 42,
+      "sessionId": 20,
+      "gunId": 6,
+      "rounds": null,
+      "notes": "Fired fairly quickly"
+    },
+    {
+      "id": 43,
+      "sessionId": 20,
+      "gunId": 1,
+      "rounds": null,
+      "notes": "Fired fairly quickly"
+    },
+    {
+      "id": 44,
+      "sessionId": 21,
+      "gunId": 6,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 45,
+      "sessionId": 21,
+      "gunId": 5,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 46,
+      "sessionId": 22,
+      "gunId": 6,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 47,
+      "sessionId": 22,
+      "gunId": 1,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 48,
+      "sessionId": 23,
+      "gunId": 6,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 49,
+      "sessionId": 23,
+      "gunId": 1,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 50,
+      "sessionId": 24,
+      "gunId": 5,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 51,
+      "sessionId": 24,
+      "gunId": 6,
+      "rounds": 80,
+      "notes": ""
+    },
+    {
+      "id": 52,
+      "sessionId": 25,
+      "gunId": 5,
+      "rounds": 100,
+      "notes": "FTE again. Removing tungsten guide rod."
+    },
+    {
+      "id": 53,
+      "sessionId": 25,
+      "gunId": 1,
+      "rounds": 100,
+      "notes": ""
+    },
+    {
+      "id": 54,
+      "sessionId": 26,
+      "gunId": 5,
+      "rounds": 50,
+      "notes": "FTE. New guide rod helps? Weight of light definitely helps."
+    },
+    {
+      "id": 55,
+      "sessionId": 26,
+      "gunId": 1,
+      "rounds": null,
+      "notes": "Disappointing"
+    },
+    {
+      "id": 56,
+      "sessionId": 27,
+      "gunId": 6,
+      "rounds": 50,
+      "notes": "Feels great in hand. Snappy as hell. Wedge grip (W)."
+    },
+    {
+      "id": 57,
+      "sessionId": 27,
+      "gunId": 8,
+      "rounds": 30,
+      "notes": "Target should sit right above sights. Impossible to control shooting DA."
+    },
+    {
+      "id": 58,
+      "sessionId": 27,
+      "gunId": 1,
+      "rounds": 50,
+      "notes": "Wedge grip works. Left hand tight, right more relaxed. Left arm locked straight, right not (helps keep sights in front of right eye, as a benefit)."
+    },
+    {
+      "id": 59,
+      "sessionId": 28,
+      "gunId": 5,
+      "rounds": 80,
+      "notes": "50 + 30 shots"
+    },
+    {
+      "id": 60,
+      "sessionId": 28,
+      "gunId": 1,
+      "rounds": 80,
+      "notes": "50 + 30 shots"
+    },
+    {
+      "id": 61,
+      "sessionId": 29,
+      "gunId": 1,
+      "rounds": 101,
+      "notes": "50 + 51 shots. New sights, good. LOW AND LEFT but improving."
+    },
+    {
+      "id": 62,
+      "sessionId": 30,
+      "gunId": 1,
+      "rounds": 104,
+      "notes": "50 + 54 shots. Horrible sights. LOW AND LEFT."
+    },
+    {
+      "id": 63,
+      "sessionId": 31,
+      "gunId": 5,
+      "rounds": 50,
+      "notes": "LOW AND LEFT"
+    },
+    {
+      "id": 64,
+      "sessionId": 31,
+      "gunId": 12,
+      "rounds": 50,
+      "notes": ""
+    },
+    {
+      "id": 65,
+      "sessionId": 32,
+      "gunId": 5,
+      "rounds": null,
+      "notes": ""
+    },
+    {
+      "id": 66,
+      "sessionId": 32,
+      "gunId": 7,
+      "rounds": null,
+      "notes": "5yds. 2 shots, reset (10s), 2 shots…. Fucking loud, kinda terrifying."
+    },
+    {
+      "id": 67,
+      "sessionId": 33,
+      "gunId": 5,
+      "rounds": null,
+      "notes": "8yds"
+    },
+    {
+      "id": 68,
+      "sessionId": 34,
+      "gunId": 4,
+      "rounds": 100,
+      "notes": "FTE (1). Mantis: 81.4 avg, 96.9 max, 54.6 min."
+    },
+    {
+      "id": 69,
+      "sessionId": 35,
+      "gunId": 5,
+      "rounds": null,
+      "notes": ""
+    }
+  ],
+  "strings": [
+    {
+      "id": 1,
+      "sessionGunId": 1,
+      "rounds": 7,
+      "yards": 10.0,
+      "notes": ".357 Magnum"
+    },
+    {
+      "id": 2,
+      "sessionGunId": 1,
+      "rounds": 14,
+      "yards": 15.0,
+      "notes": ".357 Magnum"
+    },
+    {
+      "id": 3,
+      "sessionGunId": 1,
+      "rounds": 29,
+      "yards": 20.0,
+      "notes": ".357 Magnum"
+    },
+    {
+      "id": 4,
+      "sessionGunId": 1,
+      "rounds": 50,
+      "yards": 20.0,
+      "notes": ".38 Special"
+    },
+    {
+      "id": 5,
+      "sessionGunId": 18,
+      "rounds": 10,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 6,
+      "sessionGunId": 21,
+      "rounds": 39,
+      "yards": 7.5,
+      "notes": ""
+    },
+    {
+      "id": 7,
+      "sessionGunId": 21,
+      "rounds": 39,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 8,
+      "sessionGunId": 23,
+      "rounds": 20,
+      "yards": 7.5,
+      "notes": ""
+    },
+    {
+      "id": 9,
+      "sessionGunId": 23,
+      "rounds": 30,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 10,
+      "sessionGunId": 23,
+      "rounds": 30,
+      "yards": 15.0,
+      "notes": ""
+    },
+    {
+      "id": 11,
+      "sessionGunId": 23,
+      "rounds": 50,
+      "yards": 17.5,
+      "notes": ""
+    },
+    {
+      "id": 12,
+      "sessionGunId": 23,
+      "rounds": 40,
+      "yards": 5.0,
+      "notes": "Warm-up at 5 & 7 yds (no picture)"
+    },
+    {
+      "id": 13,
+      "sessionGunId": 23,
+      "rounds": 30,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 14,
+      "sessionGunId": 23,
+      "rounds": 40,
+      "yards": 15.0,
+      "notes": ""
+    },
+    {
+      "id": 15,
+      "sessionGunId": 23,
+      "rounds": 45,
+      "yards": 12.5,
+      "notes": ""
+    },
+    {
+      "id": 16,
+      "sessionGunId": 23,
+      "rounds": 45,
+      "yards": 15.0,
+      "notes": ""
+    },
+    {
+      "id": 17,
+      "sessionGunId": 26,
+      "rounds": 30,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 18,
+      "sessionGunId": 26,
+      "rounds": 10,
+      "yards": 15.0,
+      "notes": ""
+    },
+    {
+      "id": 19,
+      "sessionGunId": 27,
+      "rounds": 20,
+      "yards": 10.0,
+      "notes": ""
+    },
+    {
+      "id": 20,
+      "sessionGunId": 27,
+      "rounds": 20,
+      "yards": 15.0,
+      "notes": ""
+    },
+    {
+      "id": 21,
+      "sessionGunId": 33,
+      "rounds": 10,
+      "yards": 3.0,
+      "notes": ""
+    },
+    {
+      "id": 22,
+      "sessionGunId": 33,
+      "rounds": 10,
+      "yards": 5.0,
+      "notes": ""
+    },
+    {
+      "id": 23,
+      "sessionGunId": 33,
+      "rounds": 10,
+      "yards": 7.0,
+      "notes": ""
+    },
+    {
+      "id": 24,
+      "sessionGunId": 34,
+      "rounds": 10,
+      "yards": 3.0,
+      "notes": ""
+    },
+    {
+      "id": 25,
+      "sessionGunId": 34,
+      "rounds": 10,
+      "yards": 5.0,
+      "notes": ""
+    },
+    {
+      "id": 26,
+      "sessionGunId": 34,
+      "rounds": 10,
+      "yards": 7.0,
+      "notes": ""
+    },
+    {
+      "id": 27,
+      "sessionGunId": 56,
+      "rounds": 50,
+      "yards": 5.0,
+      "notes": ""
+    },
+    {
+      "id": 28,
+      "sessionGunId": 61,
+      "rounds": 101,
+      "yards": 15.0,
+      "notes": ""
+    }
+  ],
+  "cleanings": [
+    {
+      "id": 1,
+      "gunId": 1,
+      "date": 20306,
+      "notes": ""
+    },
+    {
+      "id": 2,
+      "gunId": 1,
+      "date": 20577,
+      "notes": ""
+    },
+    {
+      "id": 3,
+      "gunId": 2,
+      "date": 20306,
+      "notes": ""
+    },
+    {
+      "id": 4,
+      "gunId": 3,
+      "date": 20209,
+      "notes": ""
+    },
+    {
+      "id": 5,
+      "gunId": 3,
+      "date": 20579,
+      "notes": ""
+    },
+    {
+      "id": 6,
+      "gunId": 4,
+      "date": 20089,
+      "notes": ""
+    },
+    {
+      "id": 7,
+      "gunId": 5,
+      "date": 20209,
+      "notes": ""
+    },
+    {
+      "id": 8,
+      "gunId": 6,
+      "date": 20209,
+      "notes": ""
+    },
+    {
+      "id": 9,
+      "gunId": 6,
+      "date": 20557,
+      "notes": ""
+    },
+    {
+      "id": 10,
+      "gunId": 6,
+      "date": 20669,
+      "notes": ""
+    },
+    {
+      "id": 11,
+      "gunId": 7,
+      "date": 20089,
+      "notes": ""
+    },
+    {
+      "id": 12,
+      "gunId": 8,
+      "date": 20089,
+      "notes": ""
+    }
+  ],
+  "photos": []
+}
