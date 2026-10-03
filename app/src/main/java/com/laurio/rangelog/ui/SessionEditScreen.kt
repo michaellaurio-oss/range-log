@@ -61,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -122,6 +123,11 @@ class SessionEditViewModel(app: Application, private val handle: SavedStateHandl
     }
 
     val isDirty: Boolean get() = original != null && draft != original
+
+    /** Throws away unsaved edits and goes back to what was last saved. */
+    fun revert() {
+        original?.let { draft = it }
+    }
 
     fun edit(change: (SessionDraft) -> SessionDraft) {
         draft = change(draft)
@@ -211,6 +217,8 @@ fun SessionEditScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
+    // Existing sessions open for reading; Edit switches to the editor.
+    var editing by rememberSaveable { mutableStateOf(vm.sessionId == 0L) }
     var showDate by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
@@ -222,32 +230,39 @@ fun SessionEditScreen(
         vm.addPickedPhotos(it)
     }
 
+    val stopEditing: () -> Unit = {
+        vm.discard()
+        if (vm.sessionId == 0L) onDone() else { vm.revert(); editing = false }
+    }
     val leave: () -> Unit = {
-        if (vm.isDirty) confirmDiscard = true else {
-            vm.discard(); onDone()
-        }
+        if (!editing) onDone() else if (vm.isDirty) confirmDiscard = true else stopEditing()
     }
     BackHandler(onBack = leave)
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (vm.sessionId == 0L) "New session" else "Edit session") },
+                title = { Text(if (!editing) "Session" else if (vm.sessionId == 0L) "New session" else "Edit session") },
                 navigationIcon = {
                     IconButton(onClick = leave) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    if (vm.sessionId != 0L) {
-                        IconButton(onClick = { confirmDelete = true }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete session")
+                    if (!editing) {
+                        TextButton(onClick = { editing = true }) { Text("Edit") }
+                    } else {
+                        if (vm.sessionId != 0L) {
+                            IconButton(onClick = { confirmDelete = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete session")
+                            }
                         }
+                        TextButton(onClick = {
+                            val error = vm.validationError()
+                            if (error != null) scope.launch { snackbar.showSnackbar(error) }
+                            else vm.save { if (vm.sessionId == 0L) onDone() else editing = false }
+                        }) { Text("Save") }
                     }
-                    TextButton(onClick = {
-                        val error = vm.validationError()
-                        if (error != null) scope.launch { snackbar.showSnackbar(error) } else vm.save(onDone)
-                    }) { Text("Save") }
                 },
             )
         },
@@ -257,6 +272,10 @@ fun SessionEditScreen(
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
+            return@Scaffold
+        }
+        if (!editing) {
+            SessionViewBody(vm, guns, Modifier.padding(padding)) { viewingPhoto = it }
             return@Scaffold
         }
         Column(
@@ -374,7 +393,7 @@ fun SessionEditScreen(
             title = { Text("Discard changes?") },
             text = { Text("You have unsaved changes to this session.") },
             confirmButton = {
-                TextButton(onClick = { confirmDiscard = false; vm.discard(); onDone() }) { Text("Discard") }
+                TextButton(onClick = { confirmDiscard = false; stopEditing() }) { Text("Discard") }
             },
             dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
         )
@@ -402,6 +421,72 @@ fun SessionEditScreen(
                 modifier = Modifier.fillMaxWidth().clickable { viewingPhoto = null },
             )
         }
+    }
+}
+
+@Composable
+private fun SessionViewBody(
+    vm: SessionEditViewModel,
+    guns: List<Gun>,
+    modifier: Modifier,
+    onViewPhoto: (String) -> Unit,
+) {
+    val draft = vm.draft
+    val total = draft.guns.sumOf { it.rounds.toIntOrNull() ?: it.stringTotal }
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(draft.date.pretty(), style = MaterialTheme.typography.headlineSmall)
+        if (draft.location.isNotBlank()) Text(draft.location, style = MaterialTheme.typography.titleMedium)
+        if (total > 0) Text("$total rounds", style = MaterialTheme.typography.bodyLarge)
+
+        draft.guns.filter { it.gunId != null || it.hasContent }.forEach { entry ->
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val name = guns.firstOrNull { it.id == entry.gunId }?.name ?: "Unknown gun"
+                    val rounds = entry.rounds.ifBlank { entry.stringTotal.takeIf { it > 0 }?.toString() ?: "" }
+                    Row {
+                        Text(name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text(if (rounds.isBlank()) "not counted" else "$rounds rds")
+                    }
+                    entry.strings.forEach { s ->
+                        val line = buildString {
+                            append("${s.rounds.ifBlank { "?" }} @ ${s.yards.ifBlank { "?" }} yds")
+                            if (s.notes.isNotBlank()) append("  ·  ${s.notes}")
+                        }
+                        Text(line, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (entry.notes.isNotBlank()) Text(entry.notes, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        if (draft.notes.isNotBlank()) {
+            Text("Notes", style = MaterialTheme.typography.titleMedium)
+            Text(draft.notes)
+        }
+
+        if (draft.photos.isNotEmpty()) {
+            Text("Target photos", style = MaterialTheme.typography.titleMedium)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(draft.photos, key = { it.fileName }) { p ->
+                    AsyncImage(
+                        model = vm.repo.photoFile(p.fileName),
+                        contentDescription = "Target photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(120.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onViewPhoto(p.fileName) },
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(32.dp))
     }
 }
 

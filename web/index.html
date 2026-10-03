@@ -25,6 +25,8 @@
   #who { color: var(--muted); font-size: 13px; display: flex; gap: 10px; align-items: center; }
   main { max-width: 900px; margin: 0 auto; padding: 20px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .card.click { cursor: pointer; }
+  .card.click:hover { border-color: var(--accent); }
   .card.due { background: var(--warn); color: var(--warn-ink); }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .grow { flex: 1; }
@@ -225,13 +227,12 @@ function sessionsView() {
     const y = new Date(s.date * 86400000).getUTCFullYear();
     if (y !== year) { year = y; html += `<h2>${y}</h2>`; }
     const names = (s.guns || []).map((e) => `${esc(gunName(e.gun))}${e.rounds != null ? " " + e.rounds : ""}`).join(" · ");
-    html += `<div class="card"><div class="row">
+    html += `<div class="card click" data-act="viewSession" data-id="${s.id}"><div class="row">
       <div class="grow"><b>${fmtDate(s.date)}</b> ${s.location ? "· " + esc(s.location) : ""}
         <div class="muted">${names || "No guns logged"}</div>
         ${s.notes ? `<div class="muted">${esc(s.notes)}</div>` : ""}
         ${(s.photos || []).length ? `<div class="thumbs">${s.photos.map((p) => `<img data-photo="${esc(p.fileName)}" alt="loading…">`).join("")}</div>` : ""}</div>
-      <div><b>${sessionRounds(s) || ""}</b> <span class="muted">${sessionRounds(s) ? "rds" : ""}</span></div>
-      <button class="alt" data-act="editSession" data-id="${s.id}">Edit</button></div></div>`;
+      <div><b>${sessionRounds(s) || ""}</b> <span class="muted">${sessionRounds(s) ? "rds" : ""}</span></div></div></div>`;
   }
   if (!list.length) html += `<p class="muted">No sessions yet.</p>`;
   return html;
@@ -279,7 +280,7 @@ function wire(v) {
   if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
   v.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => {
     const id = b.dataset.id;
-    ({ newSession: () => sessionDialog(null), editSession: () => sessionDialog(id),
+    ({ newSession: () => sessionDialog(null), viewSession: () => sessionView(id), editSession: () => sessionDialog(id),
        newGun: () => gunDialog(null), editGun: () => gunDialog(id),
        cleanToday: () => save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }) })[b.dataset.act]();
   });
@@ -317,6 +318,26 @@ function gunDialog(id) {
     cleans.forEach(([cid]) => remove("cleanings", cid)); remove("guns", id); closeDlg();
   };
   dlg.showModal();
+}
+
+function sessionView(id) {
+  const s = data.sessions.get(id);
+  if (!s) return;
+  const total = sessionRounds(s);
+  dlg.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${fmtDate(s.date)}</h3>
+      <button class="btn" id="editBtn">Edit</button><button class="alt" id="closeBtn">Close</button></div>
+    ${s.location ? `<p><b>${esc(s.location)}</b></p>` : ""}
+    ${total ? `<p>${total.toLocaleString()} rounds</p>` : ""}
+    ${(s.guns || []).map((e) => `<div class="entry"><div class="row"><b class="grow">${esc(gunName(e.gun))}</b>
+        <span>${e.rounds != null ? e.rounds + " rds" : '<span class="muted">not counted</span>'}</span></div>
+      ${(e.strings || []).map((t) => `<div>${t.rounds} @ ${t.yards} yds${t.notes ? " · " + esc(t.notes) : ""}</div>`).join("")}
+      ${e.notes ? `<div class="muted">${esc(e.notes)}</div>` : ""}</div>`).join("")}
+    ${s.notes ? `<h2>Notes</h2><div style="white-space:pre-wrap">${esc(s.notes)}</div>` : ""}
+    ${(s.photos || []).length ? `<h2>Target photos</h2><div class="thumbs">${s.photos.map((p) => `<img data-photo="${esc(p.fileName)}" alt="loading…">`).join("")}</div>` : ""}`;
+  $("#closeBtn").onclick = closeDlg;
+  $("#editBtn").onclick = () => sessionDialog(id);
+  fillPhotos(dlg);
+  if (!dlg.open) dlg.showModal();
 }
 
 function sessionDialog(id) {
@@ -370,7 +391,7 @@ function sessionDialog(id) {
       draw();
     };
     $("#addGun").onclick = () => { keep(); s.guns.push({ gun: "", rounds: null, notes: "", strings: [] }); draw(); };
-    $("#cancel").onclick = closeDlg;
+    $("#cancel").onclick = () => (id ? sessionView(id) : closeDlg());
     $("#ok").onclick = () => {
       keep();
       if (s.guns.some((e) => !e.gun)) return alert("Pick a gun for each entry, or remove the empty one.");
@@ -380,12 +401,14 @@ function sessionDialog(id) {
           const sum = strings.reduce((a, t) => a + t.rounds, 0);
           return { gun: e.gun, rounds: e.rounds ?? (sum > 0 ? sum : null), notes: (e.notes || "").trim(), strings };
         }) };
-      save("sessions", id || crypto.randomUUID(), out); closeDlg();
+      const sid = id || crypto.randomUUID();
+      save("sessions", sid, out);
+      if (id) { data.sessions.set(id, out); sessionView(id); } else closeDlg();
     };
     if (id) $("#del").onclick = () => { if (confirm("Delete this session?")) { remove("sessions", id); closeDlg(); } };
     fillPhotos(dlg);
   };
-  draw(); dlg.showModal();
+  draw(); if (!dlg.open) dlg.showModal();
 }
 </script>
 </body>
