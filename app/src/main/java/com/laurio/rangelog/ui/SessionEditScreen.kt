@@ -100,6 +100,7 @@ import com.laurio.rangelog.data.GunEntryDraft
 import com.laurio.rangelog.data.PhotoDraft
 import com.laurio.rangelog.data.SessionDraft
 import com.laurio.rangelog.data.StringDraft
+import com.laurio.rangelog.data.displayName
 import com.laurio.rangelog.data.toDraft
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -544,7 +545,7 @@ private fun SessionViewBody(
         draft.guns.filter { it.gunId != null || it.hasContent }.forEach { entry ->
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val name = guns.firstOrNull { it.id == entry.gunId }?.name ?: "Unknown gun"
+                    val name = guns.firstOrNull { it.id == entry.gunId }?.displayName() ?: "Unknown gun"
                     val rounds = entry.rounds.ifBlank { entry.stringTotal.takeIf { it > 0 }?.toString() ?: "" }
                     Row {
                         Text(name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -690,7 +691,7 @@ private fun GunPicker(
     Box(modifier) {
         OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
             Text(
-                selected?.name ?: "Choose gun",
+                selected?.displayName() ?: "Choose gun",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -702,7 +703,7 @@ private fun GunPicker(
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(g.name)
+                            Text(g.displayName())
                             if (g.description.isNotBlank()) {
                                 Text(
                                     g.description,

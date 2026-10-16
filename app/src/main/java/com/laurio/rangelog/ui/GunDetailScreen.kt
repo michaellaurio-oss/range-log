@@ -205,9 +205,9 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
         addedPhotos.clear()
     }
 
-    fun delete(onDeleted: () -> Unit, onBlocked: () -> Unit) = viewModelScope.launch {
-        if (repo.deleteGunIfUnused(gunId)) onDeleted() else onBlocked()
-    }
+    fun archive(onDone: () -> Unit) = viewModelScope.launch { repo.archiveGun(gunId); onDone() }
+
+    fun delete(onDone: () -> Unit) = viewModelScope.launch { repo.deleteGun(gunId); onDone() }
 
     fun logCleaning(date: LocalDate, text: String) = viewModelScope.launch { repo.logCleaning(gunId, date, text) }
 
@@ -346,7 +346,7 @@ fun GunDetailScreen(
                 Column(Modifier.weight(1f)) {
                     Text("In rotation", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        "Turn off to retire it. Retired guns keep their history but leave the gun picker.",
+                        "Turn off to archive it. Archived guns keep their history but leave the gun picker.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -442,20 +442,19 @@ fun GunDetailScreen(
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete this gun?") },
-            text = { Text("Only guns that were never logged in a session can be deleted. Otherwise, retire it by turning off \"In rotation\".") },
+            title = { Text("Remove this gun?") },
+            text = {
+                Text(
+                    "Sessions are never deleted. Archive takes the gun out of the pick list; its sessions show " +
+                        "\"${vm.name} (archived)\". Delete permanently removes the gun; any sessions that used it show " +
+                        "\"${vm.name} (deleted)\"."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    confirmDelete = false
-                    vm.delete(
-                        onDeleted = onDone,
-                        onBlocked = {
-                            scope.launch {
-                                snackbar.showSnackbar("This gun has sessions logged. Turn off \"In rotation\" to retire it instead.")
-                            }
-                        },
-                    )
-                }) { Text("Delete") }
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { confirmDelete = false; vm.archive(onDone) }) { Text("Remove from pick list") }
+                    TextButton(onClick = { confirmDelete = false; vm.delete(onDone) }) { Text("Delete permanently") }
+                }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
@@ -495,7 +494,7 @@ private fun GunReadOnlyDetails(vm: GunDetailViewModel) {
     Text(vm.name, style = MaterialTheme.typography.headlineSmall)
     if (vm.description.isNotBlank()) Text(vm.description, style = MaterialTheme.typography.titleMedium)
     if (!vm.active) {
-        Text("Retired: hidden from the gun picker", style = MaterialTheme.typography.bodyMedium)
+        Text("Archived: hidden from the gun picker", style = MaterialTheme.typography.bodyMedium)
     }
     if (vm.notMine) {
         Text("Not my gun (rented or borrowed)", style = MaterialTheme.typography.bodyMedium)

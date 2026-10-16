@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -57,6 +58,7 @@ private val tabs = listOf(
     Tab("sessions", "Sessions", Icons.Default.DateRange),
     Tab("guns", "Guns", Icons.Default.Build),
     Tab("stats", "Stats", Icons.Default.Star),
+    Tab("admin", "Admin", Icons.Default.Settings),
 )
 
 @Composable
@@ -184,6 +186,9 @@ fun RangeLogNav() {
             }
             composable("stats") {
                 StatsScreen(mainVm)
+            }
+            composable("admin") {
+                AdminScreen(mainVm)
             }
             composable(
                 "session/{id}",

@@ -268,6 +268,7 @@ class CloudSync(
             photo = d.str("photo"),
             active = d["active"] as? Boolean ?: true,
             notMine = d["notMine"] as? Boolean ?: false,
+            deleted = d["deleted"] as? Boolean ?: false,
             syncId = syncId,
         )
         if (existing == null) dao.insertGun(gun) else if (existing != gun) dao.updateGun(gun)
@@ -440,6 +441,14 @@ class CloudSync(
         val order = listOf("cleanings", "sessions", "guns")
         // Remove what the step created (children first), then restore what it changed or deleted (parents first).
         for (c in order) e.ops.filter { it.c == c && it.before == null }.forEach {
+            val keptGun = if (c == "guns") dao.gunBySync(it.id)?.takeIf { g -> dao.sessionCountForGun(g.id) > 0 } else null
+            if (keptGun != null) {
+                // Sessions never get deleted: a gun they still use is hidden as "deleted" instead of removed.
+                val hidden = keptGun.copy(deleted = true, active = false)
+                dao.updateGun(hidden)
+                ref("guns", it.id)?.set(gunDoc(hidden))?.report()
+                return@forEach
+            }
             when (c) {
                 "guns" -> dao.deleteGunBySync(it.id)
                 "sessions" -> removeSession(it.id)
@@ -603,7 +612,7 @@ class CloudSync(
             "name" to g.name, "description" to g.description, "notes" to g.notes,
             "cleanInterval" to g.cleanInterval?.toLong(), "cleanMonths" to g.cleanMonths?.toLong(),
             "photo" to g.photo, "active" to g.active, "notMine" to g.notMine,
-        )
+        ) + if (g.deleted) mapOf("deleted" to true) else emptyMap() // only written when set, so older documents still match
 
         fun cleaningDoc(c: Cleaning, gunSyncId: String): Map<String, Any?> = mapOf(
             "gun" to gunSyncId, "date" to c.date, "notes" to c.notes,
