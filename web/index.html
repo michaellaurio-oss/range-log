@@ -52,8 +52,9 @@
   .thumbs .ph { position: relative; }
   .thumbs img { height: 72px; min-width: 54px; border-radius: 6px; background: var(--line); cursor: zoom-in; display: block; }
   .thumbs .ph button { position: absolute; top: 2px; right: 2px; padding: 0 6px; }
-  #lb img { max-width: 100%; max-height: 80vh; display: block; margin: 0 auto; }
-  .lbwrap { position: relative; }
+  #lb img { max-width: 100%; max-height: 80vh; display: block; margin: 0 auto; transform-origin: center; cursor: zoom-in; user-select: none; -webkit-user-drag: none; }
+  #lb img.zoomed { cursor: grab; }
+  .lbwrap { position: relative; overflow: hidden; touch-action: none; }
   .lbnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; border: 0; border-radius: 10px; background: rgba(0,0,0,.45); color: #fff; font-size: 34px; line-height: 1; cursor: pointer; }
   .lbnav:hover { background: rgba(0,0,0,.7); }
   #lbPrev { left: 8px; }
@@ -88,7 +89,7 @@
 <div id="status"></div>
 
 <dialog id="dlg"></dialog>
-<dialog id="lb"><div class="lbwrap"><img id="lbImg" alt=""><button class="lbnav" id="lbPrev" aria-label="Previous photo">‹</button><button class="lbnav" id="lbNext" aria-label="Next photo">›</button><span id="lbCount"></span></div><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
+<dialog id="lb"><div class="lbwrap"><img id="lbImg" alt=""><button class="lbnav" id="lbPrev" aria-label="Previous photo">‹</button><button class="lbnav" id="lbNext" aria-label="Next photo">›</button><span id="lbCount"></span></div><div class="row" style="margin-top:10px"><button class="alt" id="lbOut" aria-label="Zoom out">−</button><button class="alt" id="lbIn" aria-label="Zoom in">+</button><button class="alt" id="lbReset">Fit</button><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -148,7 +149,30 @@ function fillPhotos(root) {
   });
 }
 let lbNames = [], lbIdx = 0;
+let zs = 1, zx = 0, zy = 0;
+function applyZoom() {
+  const img = $("#lbImg");
+  const mx = img.clientWidth * (zs - 1) / 2, my = img.clientHeight * (zs - 1) / 2;
+  zx = Math.max(-mx, Math.min(mx, zx)); zy = Math.max(-my, Math.min(my, zy));
+  if (zs === 1) { zx = 0; zy = 0; }
+  img.style.transform = "translate(" + zx + "px," + zy + "px) scale(" + zs + ")";
+  img.classList.toggle("zoomed", zs > 1);
+}
+function setZoom(s) { zs = Math.max(1, Math.min(8, s)); applyZoom(); }
+{
+  const img = $("#lbImg");
+  let drag = null;
+  img.addEventListener("wheel", (e) => { e.preventDefault(); setZoom(zs * (e.deltaY < 0 ? 1.25 : 0.8)); }, { passive: false });
+  img.addEventListener("dblclick", () => setZoom(zs > 1 ? 1 : 3));
+  img.addEventListener("pointerdown", (e) => { if (zs > 1) { drag = { x: e.clientX - zx, y: e.clientY - zy }; img.setPointerCapture(e.pointerId); } });
+  img.addEventListener("pointermove", (e) => { if (drag) { zx = e.clientX - drag.x; zy = e.clientY - drag.y; applyZoom(); } });
+  img.addEventListener("pointerup", () => { drag = null; });
+  $("#lbIn").onclick = () => setZoom(zs * 1.5);
+  $("#lbOut").onclick = () => setZoom(zs / 1.5);
+  $("#lbReset").onclick = () => setZoom(1);
+}
 async function showLb() {
+  setZoom(1);
   $("#lbCount").textContent = (lbIdx + 1) + " of " + lbNames.length;
   $("#lbImg").src = (await photoData(lbNames[lbIdx])) || "";
 }

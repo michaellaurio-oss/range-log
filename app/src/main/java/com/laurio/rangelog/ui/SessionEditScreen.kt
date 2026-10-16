@@ -70,6 +70,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -425,13 +437,11 @@ fun SessionEditScreen(
             onDismissRequest = { viewingPhoto = null },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            Box(Modifier.fillMaxSize().clickable { viewingPhoto = null }) {
+            Box(Modifier.fillMaxSize()) {
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
-                    AsyncImage(
+                    ZoomableImage(
                         model = vm.repo.photoFile(photos[page].fileName),
-                        contentDescription = "Target photo",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
+                        onTap = { viewingPhoto = null },
                     )
                 }
                 if (photos.size > 1) {
@@ -448,6 +458,66 @@ fun SessionEditScreen(
                 }
             }
         }
+    }
+}
+
+/** Photo that zooms with a pinch, pans when zoomed, and toggles zoom on double-tap. Tap closes. */
+@Composable
+private fun ZoomableImage(model: Any, onTap: () -> Unit) {
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+
+    fun clamp(o: Offset, s: Float): Offset {
+        val maxX = size.width * (s - 1f) / 2f
+        val maxY = size.height * (s - 1f) / 2f
+        return Offset(o.x.coerceIn(-maxX, maxX), o.y.coerceIn(-maxY, maxY))
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onSizeChanged { size = it }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onDoubleTap = {
+                        if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 3f
+                    },
+                )
+            }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        // Only take over the gesture when pinching or already zoomed, so the
+                        // pager can still swipe between photos at normal size.
+                        if (event.changes.size > 1 || scale > 1f) {
+                            val newScale = (scale * event.calculateZoom()).coerceIn(1f, 6f)
+                            scale = newScale
+                            offset = if (newScale == 1f) Offset.Zero
+                            else clamp(offset + event.calculatePan(), newScale)
+                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
+        AsyncImage(
+            model = model,
+            contentDescription = "Target photo",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(8.dp)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                ),
+        )
     }
 }
 
