@@ -1,7 +1,11 @@
 package com.laurio.rangelog.data
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import androidx.room.withTransaction
@@ -195,6 +199,28 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         val file = photoFile(name)
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         return name to uri
+    }
+
+    /** Puts a copy of a camera photo in the phone's gallery (Pictures/Range Log). Android 10+ only. */
+    suspend fun copyToGallery(name: String) = withContext(Dispatchers.IO) {
+        if (Build.VERSION.SDK_INT < 29) return@withContext
+        runCatching {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Range Log")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val resolver = context.contentResolver
+            val target = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: return@runCatching
+            resolver.openOutputStream(target)?.use { out ->
+                photoFile(name).inputStream().use { it.copyTo(out) }
+            }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(target, values, null, null)
+        }
     }
 
     /** Copies a picked image into private storage and returns its file name. */
