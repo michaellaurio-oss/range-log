@@ -244,11 +244,17 @@ class CloudSync(
             description = d.str("description"),
             notes = d.str("notes"),
             cleanInterval = d.num("cleanInterval")?.toInt(),
+            cleanMonths = d.num("cleanMonths")?.toInt(),
+            photo = d.str("photo"),
             active = d["active"] as? Boolean ?: true,
             notMine = d["notMine"] as? Boolean ?: false,
             syncId = syncId,
         )
         if (existing == null) dao.insertGun(gun) else if (existing != gun) dao.updateGun(gun)
+        if (gun.photo.isNotBlank()) scope.launch { downloadPhoto(gun.photo) }
+        if (existing != null && existing.photo.isNotBlank() && existing.photo != gun.photo) {
+            photoFile(existing.photo).delete()
+        }
     }
 
     private suspend fun applyCleaning(syncId: String, d: Map<String, Any?>) {
@@ -332,6 +338,7 @@ class CloudSync(
     fun pushGun(g: Gun) {
         val r = ref("guns", g.syncId) ?: return dirtyIfSignedOut()
         r.set(gunDoc(g)).report()
+        if (g.photo.isNotBlank()) scope.launch { uploadPhoto(g.photo) }
     }
 
     fun deleteGun(syncId: String) {
@@ -426,7 +433,8 @@ class CloudSync(
     /** Uploads local photos the cloud doesn't have yet and fetches ones that exist only in the cloud. */
     private fun syncPhotos() {
         scope.launch {
-            dao.allPhotos().map { it.fileName }.distinct().forEach { name ->
+            val names = dao.allPhotos().map { it.fileName } + dao.allGuns().map { it.photo }.filter { it.isNotBlank() }
+            names.distinct().forEach { name ->
                 if (photoFile(name).exists()) uploadPhoto(name) else downloadPhoto(name)
             }
         }
@@ -472,7 +480,8 @@ class CloudSync(
 
         fun gunDoc(g: Gun): Map<String, Any?> = mapOf(
             "name" to g.name, "description" to g.description, "notes" to g.notes,
-            "cleanInterval" to g.cleanInterval?.toLong(), "active" to g.active, "notMine" to g.notMine,
+            "cleanInterval" to g.cleanInterval?.toLong(), "cleanMonths" to g.cleanMonths?.toLong(),
+            "photo" to g.photo, "active" to g.active, "notMine" to g.notMine,
         )
 
         fun cleaningDoc(c: Cleaning, gunSyncId: String): Map<String, Any?> = mapOf(

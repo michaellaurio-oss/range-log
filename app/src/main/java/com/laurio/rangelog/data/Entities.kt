@@ -22,6 +22,10 @@ data class Gun(
     val notes: String = "",
     /** Optional reminder: clean after this many rounds. */
     val cleanInterval: Int? = null,
+    /** Optional reminder: clean after this many months since the last cleaning. */
+    val cleanMonths: Int? = null,
+    /** Name of the gun's picture file in the photos folder, or blank. */
+    @ColumnInfo(defaultValue = "''") val photo: String = "",
     /** Retired guns are hidden from the picker when logging a new session. */
     val active: Boolean = true,
     /** Rented or borrowed: no cleaning log or reminders. */

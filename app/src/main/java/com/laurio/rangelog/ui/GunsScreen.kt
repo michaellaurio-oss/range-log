@@ -36,6 +36,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import com.laurio.rangelog.RangeLogApp
 import com.laurio.rangelog.data.GunSummary
 
 @Composable
@@ -91,6 +99,16 @@ private fun GunCard(s: GunSummary, onClick: () -> Unit, onCleaned: (() -> Unit)?
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (s.gun.photo.isNotBlank()) {
+                    val repo = (LocalContext.current.applicationContext as RangeLogApp).repository
+                    AsyncImage(
+                        model = repo.photoFile(s.gun.photo),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column(Modifier.weight(1f)) {
                     Text(s.gun.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     if (s.gun.description.isNotBlank()) {
@@ -121,14 +139,18 @@ private fun GunCard(s: GunSummary, onClick: () -> Unit, onCleaned: (() -> Unit)?
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (due) FontWeight.Bold else FontWeight.Normal,
             )
-            val interval = s.gun.cleanInterval
-            if (interval != null && interval > 0) {
+            val interval = s.gun.cleanInterval?.takeIf { it > 0 }
+            val months = s.gun.cleanMonths?.takeIf { it > 0 }
+            if (interval != null) {
                 LinearProgressIndicator(
                     progress = { (s.roundsSinceCleaning.toFloat() / interval).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
+            }
+            if (interval != null || months != null) {
+                val every = listOfNotNull(interval?.let { "$it rds" }, months?.let { "$it months" }).joinToString(" or ")
                 Text(
-                    if (due) "Cleaning due (every $interval rds)" else "Clean every $interval rds",
+                    if (due) "Cleaning due (every $every)" else "Clean every $every",
                     style = MaterialTheme.typography.labelSmall,
                 )
             }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 data class GunSummary(
@@ -30,8 +31,28 @@ data class GunSummary(
     /** Sessions since the last cleaning where the round count wasn't recorded. */
     val uncountedSinceCleaning: Int,
 ) {
-    val cleaningDue: Boolean
+    private val roundsDue: Boolean
         get() = !gun.notMine && gun.cleanInterval != null && roundsSinceCleaning >= gun.cleanInterval
+
+    /** Months since the last cleaning, but only if the gun has been shot since (an unused gun stays clean). */
+    private val monthsSinceCleaning: Long?
+        get() = lastCleaned?.takeIf { roundsSinceCleaning > 0 || uncountedSinceCleaning > 0 }
+            ?.let { ChronoUnit.MONTHS.between(it, LocalDate.now()) }
+
+    private val monthsDue: Boolean
+        get() = !gun.notMine && gun.cleanMonths != null && (monthsSinceCleaning ?: -1) >= gun.cleanMonths
+
+    val cleaningDue: Boolean get() = roundsDue || monthsDue
+
+    /** Why cleaning is due, for the reminders. */
+    val dueDetail: String
+        get() = buildList {
+            if (roundsDue) {
+                val over = roundsSinceCleaning - (gun.cleanInterval ?: 0)
+                add("$roundsSinceCleaning rds since cleaning" + if (over > 0) " ($over over)" else "")
+            }
+            if (monthsDue) add("last cleaned $monthsSinceCleaning months ago")
+        }.joinToString(", ")
 }
 
 data class PhotoImportResult(val added: Int, val duplicates: Int, val unmatched: List<String>)
@@ -81,9 +102,11 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             id
         } else {
             // The editor builds a fresh Gun, so keep the stored cloud id.
-            val saved = gun.copy(syncId = dao.getGun(gun.id)?.syncId ?: gun.syncId)
+            val old = dao.getGun(gun.id)
+            val saved = gun.copy(syncId = old?.syncId ?: gun.syncId)
             dao.updateGun(saved)
             sync.pushGun(saved)
+            if (old != null && old.photo.isNotBlank() && old.photo != saved.photo) photoFile(old.photo).delete()
             gun.id
         }
     }
@@ -99,6 +122,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
         cleanings.forEach { sync.deleteCleaning(it.syncId) }
         gun?.let { sync.deleteGun(it.syncId) }
+        gun?.photo?.takeIf { it.isNotBlank() }?.let { photoFile(it).delete() }
         true
     }
 
