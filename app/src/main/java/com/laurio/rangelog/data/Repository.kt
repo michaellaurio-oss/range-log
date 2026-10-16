@@ -42,10 +42,9 @@ data class GunSummary(
     private val roundsDue: Boolean
         get() = !gun.notMine && gun.cleanInterval != null && roundsSinceCleaning >= gun.cleanInterval
 
-    /** Months since the last cleaning, but only if the gun has been shot since (an unused gun stays clean). */
+    /** Months since the last cleaning, whether or not the gun was shot since. */
     private val monthsSinceCleaning: Long?
-        get() = lastCleaned?.takeIf { roundsSinceCleaning > 0 || uncountedSinceCleaning > 0 }
-            ?.let { ChronoUnit.MONTHS.between(it, LocalDate.now()) }
+        get() = lastCleaned?.let { ChronoUnit.MONTHS.between(it, LocalDate.now()) }
 
     private val monthsDue: Boolean
         get() = !gun.notMine && gun.cleanMonths != null && (monthsSinceCleaning ?: -1) >= gun.cleanMonths
