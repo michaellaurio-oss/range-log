@@ -167,6 +167,7 @@ class SessionEditViewModel(app: Application, private val handle: SavedStateHandl
         if (success) {
             addedThisEdit += name
             edit { it.copy(photos = it.photos + PhotoDraft(name)) }
+            viewModelScope.launch { repo.copyToGallery(name) }
         } else {
             repo.discardPhoto(name)
         }
