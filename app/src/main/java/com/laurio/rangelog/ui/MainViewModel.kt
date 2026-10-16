@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -65,6 +67,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun dismissCleanReminder() { _cleanReminder.value = null }
 
     val undoItems = repo.undoEntries
+
+    /** Ids of steps that can be undone cleanly: everything they touched is still as the step left it. */
+    val undoableIds: StateFlow<Set<String>> =
+        combine(undoItems, sessions, gunSummaries) { steps, _, _ -> steps }
+            .map { steps -> steps.filter { repo.sync.undoConflicts(it) == 0 }.map { it.id }.toSet() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     /** Set when the newest step's items were edited again since; the UI asks before overwriting. */
     private val _undoConflict = MutableStateFlow<Repository.UndoOutcome.Conflict?>(null)

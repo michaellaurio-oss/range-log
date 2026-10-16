@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.laurio.rangelog.data.SessionFull
+import com.laurio.rangelog.data.displayName
 import java.time.LocalDate
 
 private sealed interface ListRow {
@@ -170,7 +171,7 @@ private fun SessionCard(s: SessionFull, onClick: () -> Unit) {
             if (s.guns.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     s.guns.forEach { g ->
-                        val name = g.gun?.name ?: "?"
+                        val name = g.gun?.displayName() ?: "?"
                         AssistChip(
                             onClick = onClick,
                             label = { Text(if (g.entry.rounds != null) "$name · ${g.entry.rounds}" else name) },

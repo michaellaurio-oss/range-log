@@ -50,8 +50,8 @@ import com.laurio.rangelog.data.GunSummary
 fun GunsScreen(vm: MainViewModel, onOpen: (Long) -> Unit) {
     val summaries by vm.gunSummaries.collectAsStateWithLifecycle()
     var showRetired by rememberSaveable { mutableStateOf(false) }
-    val active = summaries.filter { it.gun.active }
-    val retired = summaries.filter { !it.gun.active }
+    val active = summaries.filter { it.gun.active && !it.gun.deleted }
+    val retired = summaries.filter { !it.gun.active && !it.gun.deleted }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -75,7 +75,7 @@ fun GunsScreen(vm: MainViewModel, onOpen: (Long) -> Unit) {
             if (retired.isNotEmpty()) {
                 item {
                     TextButton(onClick = { showRetired = !showRetired }) {
-                        Text(if (showRetired) "Hide retired guns" else "Show retired guns (${retired.size})")
+                        Text(if (showRetired) "Hide archived guns" else "Show archived guns (${retired.size})")
                     }
                 }
                 if (showRetired) {

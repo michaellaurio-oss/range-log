@@ -35,7 +35,7 @@ Explain build and install steps plainly and prefer doing things over telling him
 - Firebase project `range-log-88193` (his Google account). Firestore layout:
   `users/{uid}/{guns|sessions|cleanings|photos}/{id}`. A session doc nests its gun entries, strings and
   photo names. `syncId` columns on guns, sessions and cleanings (`MIGRATION_1_2`); `notMine` on guns
-  (`MIGRATION_2_3`). DB is at version 4 (`MIGRATION_3_4`: `cleanMonths`, `photo` on guns). Rules are in `firestore.rules` (published in the console).
+  (`MIGRATION_2_3`). DB is at version 5 (`MIGRATION_3_4`: `cleanMonths`, `photo`; `MIGRATION_4_5`: `deleted` on guns). Rules are in `firestore.rules` (published in the console).
 - `data/CloudSync.kt` does both directions. Repository wraps each local write in
   `sync.exclusive {}` and pushes the doc. Remote changes arrive as snapshot events (own pending
   writes are skipped). Editing code must keep the stored `syncId` (see `saveGun`, `saveSessionRows`).
@@ -74,6 +74,12 @@ Explain build and install steps plainly and prefer doing things over telling him
   phone, with a `confirm` on conflicts. Header button, Ctrl+Z, history card on the Stats tab.
 - Photo files on the phone are never deleted directly: removed names go in a prefs "trash" set and are deleted only
   when neither the DB nor any undo entry references them. Cloud photo docs are never deleted, so pictures always come back.
+- Each history row has its own Undo button, shown only while every item the step touched is still as the step left it
+  (otherwise "edited since"). The snackbar and header button still offer "undo anyway" on conflicts.
+- Sessions are never deleted. Removing a gun offers archive (`active=false`, shown "(archived)") or delete permanently:
+  a gun no session uses is removed; otherwise it gets `deleted=true` (hidden, shown "(deleted)"). Undoing the creation
+  of a gun that sessions use also tombstones it. `deleted` is only written to the cloud doc when true.
+- Admin tab (phone and web) holds undo history, sync, photo import and backup; Stats is stats only.
 - Gun pictures live in the same photos folder (`Gun.photo`, `cleanMonths`, DB v4).
 
 ## Stack
@@ -93,7 +99,7 @@ app/src/main/java/com/laurio/rangelog/
   data/
     Entities.kt         Room entities (also @Serializable), relation POJOs, Backup
     RangeDao.kt         all queries
-    AppDatabase.kt      Room DB "rangelog.db", version 4, migrations, exportSchema=false
+    AppDatabase.kt      Room DB "rangelog.db", version 5, migrations, exportSchema=false
     Repository.kt       business logic: save/delete session, gun summaries,
                         photos, JSON backup/restore, first-launch seeding
     CloudSync.kt        Firestore two-way sync, Google sign-in, photo up/download
@@ -121,7 +127,7 @@ firestore.rules                 Firestore security rules (own data only)
 
 ## Data model
 
-- `Gun(id, name, description, notes, cleanInterval?, cleanMonths?, photo, active, notMine, syncId)`. `name` is the short label
+- `Gun(id, name, description, notes, cleanInterval?, cleanMonths?, photo, active, notMine, syncId, deleted)`. `name` is the short label
   he uses ("SP01", "HCP", "G19.3"). `notes` holds upgrades and mods. Retired
   (`active=false`) guns are hidden from the picker but keep their history.
 - `Session(id, date, location, notes)`. **Dates are `LocalDate.toEpochDay()` longs.**

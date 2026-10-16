@@ -50,7 +50,7 @@ data class GunSummary(
     private val monthsDue: Boolean
         get() = !gun.notMine && gun.cleanMonths != null && (monthsSinceCleaning ?: -1) >= gun.cleanMonths
 
-    val cleaningDue: Boolean get() = roundsDue || monthsDue
+    val cleaningDue: Boolean get() = !gun.deleted && (roundsDue || monthsDue)
 
     /** Why cleaning is due, for the reminders. */
     val dueDetail: String
@@ -132,22 +132,42 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             }
         }
 
-    /** Deletes a gun only if it has never been logged in a session. Returns false otherwise. */
-    suspend fun deleteGunIfUnused(id: Long): Boolean =
-        undoable("Deleted gun ${dao.getGun(id)?.name.orEmpty()}", offer = true) {
+    /** Takes a gun out of the picker but keeps it (and its sessions) in the log, shown as "(archived)". */
+    suspend fun archiveGun(id: Long) {
+        val gun = dao.getGun(id) ?: return
+        undoable("Archived gun ${gun.name}", offer = true) {
             sync.exclusive {
-                if (dao.sessionCountForGun(id) > 0) return@exclusive false
-                val gun = dao.getGun(id)
-                val cleanings = dao.allCleanings().filter { it.gunId == id }
-                db.withTransaction {
-                    dao.deleteCleaningsForGun(id)
-                    dao.deleteGun(id)
-                }
-                cleanings.forEach { sync.deleteCleaning(it.syncId) }
-                gun?.let { sync.deleteGun(it.syncId) }
-                true
+                val saved = gun.copy(active = false)
+                dao.updateGun(saved)
+                sync.pushGun(saved)
             }
         }
+    }
+
+    /**
+     * Deletes a gun for good if it was never logged in a session. Sessions are never deleted, so a gun
+     * that has some is kept but hidden, and those sessions show it as "(deleted)".
+     */
+    suspend fun deleteGun(id: Long) {
+        val gun = dao.getGun(id) ?: return
+        undoable("Deleted gun ${gun.name}", offer = true) {
+            sync.exclusive {
+                if (dao.sessionCountForGun(id) > 0) {
+                    val hidden = gun.copy(deleted = true, active = false)
+                    dao.updateGun(hidden)
+                    sync.pushGun(hidden)
+                } else {
+                    val cleanings = dao.allCleanings().filter { it.gunId == id }
+                    db.withTransaction {
+                        dao.deleteCleaningsForGun(id)
+                        dao.deleteGun(id)
+                    }
+                    cleanings.forEach { sync.deleteCleaning(it.syncId) }
+                    sync.deleteGun(gun.syncId)
+                }
+            }
+        }
+    }
 
     suspend fun logCleaning(gunId: Long, date: LocalDate, notes: String) = undoable("Logged a cleaning") {
         sync.exclusive {

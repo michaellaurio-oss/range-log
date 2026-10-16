@@ -32,7 +32,19 @@ data class Gun(
     @ColumnInfo(defaultValue = "0") val notMine: Boolean = false,
     /** Stable id shared across devices (the cloud document id). */
     @ColumnInfo(defaultValue = "''") val syncId: String = UUID.randomUUID().toString(),
+    /**
+     * Deleted by the user but kept (hidden everywhere) because sessions still refer to it.
+     * Those sessions show the name followed by "(deleted)".
+     */
+    @ColumnInfo(defaultValue = "0") val deleted: Boolean = false,
 )
+
+/** The name as shown next to a logged session: flags guns that are archived or deleted. */
+fun Gun.displayName(): String = name + when {
+    deleted -> " (deleted)"
+    !active -> " (archived)"
+    else -> ""
+}
 
 /** One trip to the range. Dates are stored as LocalDate.toEpochDay(). */
 @Serializable

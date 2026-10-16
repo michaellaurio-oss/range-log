@@ -82,11 +82,12 @@
       <button data-tab="sessions" class="on">Sessions</button>
       <button data-tab="guns">Guns</button>
       <button data-tab="stats">Stats</button>
+      <button data-tab="admin">Admin</button>
     </nav>
     <div id="who"><span id="undoLabel" class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><button class="alt" id="undoBtn" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button><span id="email"></span><button class="alt" id="signout">Sign out</button></div>
   </header>
   <main id="view"></main>
-  <p class="muted" style="text-align:center;margin:0 0 60px">Backups are made from the phone app: Stats tab, then Backup, then Export (pictures included).</p>
+  <p class="muted" style="text-align:center;margin:0 0 60px">Backups are made from the phone app: Admin tab, then Backup, then Export (pictures included).</p>
 </div>
 <div id="status"></div>
 
@@ -151,7 +152,7 @@ function renderUndo() {
   const top = uid ? undoEntries[0] : null;
   $("#undoBtn").disabled = !top;
   $("#undoLabel").textContent = top ? top.label : "";
-  if (uid && tab === "stats") render();
+  if (uid && tab === "admin") render();
 }
 const UNDO_WEIGHT = { sessions: 2, guns: 2, cleanings: 1 };
 function describe(name, before, after) {
@@ -181,15 +182,29 @@ function record(name, id, next) {
   if (again) again.after = after; else group.ops.push({ c: name, id, before, after });
   if (UNDO_WEIGHT[name] > group.weight) { group.weight = UNDO_WEIGHT[name]; group.label = describe(name, before, after); }
 }
-async function undoLast() {
-  const e = undoEntries[0];
+// How many items in a step were changed again afterwards. 0 means the step can be undone cleanly.
+// Sessions are never deleted. A gun they still use is hidden as "deleted" rather than removed;
+// a gun nothing uses is removed for good, with its cleaning log.
+const gunInUse = (id, ignoreSessions = new Set()) =>
+  [...data.sessions].some(([sid, s]) => !ignoreSessions.has(sid) && (s.guns || []).some((e) => e.gun === id));
+function deleteGun(id) {
+  if (gunInUse(id)) { save("guns", id, { ...data.guns.get(id), active: false, deleted: true }); return; }
+  [...data.cleanings].filter(([, c]) => c.gun === id).forEach(([cid]) => remove("cleanings", cid));
+  remove("guns", id);
+}
+const staleCount = (e) => e.ops.filter((o) => !sameDoc(data[o.c].get(o.id), o.after)).length;
+async function undoLast(e = undoEntries[0]) {
   if (!e) return;
-  const changed = e.ops.filter((o) => !sameDoc(data[o.c].get(o.id), o.after)).length;
+  const changed = staleCount(e);
   if (changed && !confirm("“" + e.label + "”: " + changed + " item" + (changed === 1 ? " was" : "s were") +
     " edited again after that. Undoing now would overwrite those newer edits. Undo anyway?")) return;
   const order = ["cleanings", "sessions", "guns"];
   // Remove what the step created (children first), then restore what it changed or deleted (parents first).
-  for (const c of order) for (const o of e.ops.filter((o) => o.c === c && o.before == null)) deleteDoc(ref(c, o.id)).catch(showErr);
+  const goneSessions = new Set(e.ops.filter((o) => o.c === "sessions" && o.before == null).map((o) => o.id));
+  for (const c of order) for (const o of e.ops.filter((o) => o.c === c && o.before == null)) {
+    if (c === "guns" && gunInUse(o.id, goneSessions)) setDoc(ref(c, o.id), clean({ ...data.guns.get(o.id), active: false, deleted: true })).catch(showErr);
+    else deleteDoc(ref(c, o.id)).catch(showErr);
+  }
   for (const c of [...order].reverse()) for (const o of e.ops.filter((o) => o.c === c && o.before != null)) setDoc(ref(c, o.id), o.before).catch(showErr);
   deleteDoc(ref("undo", e.id)).catch(showErr);
   if ($("#dlg").open) $("#dlg").close();
@@ -281,7 +296,7 @@ $("#signinBtn").onclick = async () => {
   catch (e) { $("#signinErr").textContent = e.message; }
 };
 $("#signout").onclick = () => signOut(auth);
-$("#undoBtn").onclick = undoLast;
+$("#undoBtn").onclick = () => undoLast();
 document.addEventListener("keydown", (e) => {
   if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
   if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || $("#dlg").open || $("#lb").open) return;
@@ -319,7 +334,9 @@ document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
 const gunList = () => [...data.guns].map(([id, g]) => ({ id, ...g }));
 const sessionList = () => [...data.sessions].map(([id, s]) => ({ id, ...s })).sort((a, b) => b.date - a.date);
 const sessionRounds = (s) => (s.guns || []).reduce((t, e) => t + (e.rounds ?? 0), 0);
-const gunName = (id) => data.guns.get(id)?.name ?? "(deleted gun)";
+// A gun's name as shown next to a logged session: flags archived and deleted guns.
+const gunLabel = (g) => g.name + (g.deleted ? " (deleted)" : g.active ? "" : " (archived)");
+const gunName = (id) => (data.guns.get(id) ? gunLabel(data.guns.get(id)) : "(deleted gun)");
 
 function gunSummary(id) {
   const g = data.guns.get(id);
@@ -354,6 +371,7 @@ function render() {
   const v = $("#view");
   if (tab === "sessions") v.innerHTML = sessionsView();
   else if (tab === "guns") v.innerHTML = gunsView();
+  else if (tab === "admin") v.innerHTML = adminView();
   else v.innerHTML = statsView();
   wire(v);
   fillPhotos(v);
@@ -383,13 +401,13 @@ function sessionsView() {
 }
 
 function gunsView() {
-  const guns = gunList().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
+  const guns = gunList().filter((g) => !g.deleted).sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
   let html = `<div class="row"><span class="grow"></span><button class="btn" data-act="newGun">New gun</button></div><br>`;
   for (const g of guns) {
     const s = gunSummary(g.id);
     html += `<div class="card click ${s.due ? "due" : ""}" data-act="viewGun" data-id="${g.id}"><div class="row">
       ${g.photo ? `<div class="thumbs" style="margin:0"><img data-photo="${esc(g.photo)}" alt="loading…"></div>` : ""}
-      <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
+      <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(archived)</span>'}
         <div class="muted">${esc(g.description)}</div>
         <div class="muted">${s.total.toLocaleString()} rds total · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
         ${g.notMine ? '<div class="muted">Not my gun</div>' : `<div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
@@ -407,7 +425,7 @@ function statsView() {
   const byYear = {};
   for (const s of sessions) { const y = new Date(s.date * 86400000).getUTCFullYear(); byYear[y] = (byYear[y] || 0) + sessionRounds(s); }
   const counted = sessions.filter((s) => sessionRounds(s) > 0);
-  const byGun = gunList().map((g) => [g.name, gunSummary(g.id).total]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  const byGun = gunList().map((g) => [gunLabel(g), gunSummary(g.id).total]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
   const bars = (rows) => { const max = Math.max(1, ...rows.map((r) => r[1])); return rows.map(([k, v]) =>
     `<div class="barrow"><span>${esc(k)}</span><div><div class="bar" style="width:${(v / max) * 100}%"></div></div><span>${v.toLocaleString()}</span></div>`).join(""); };
   return `<div class="grid">
@@ -416,15 +434,22 @@ function statsView() {
     <div class="card tile"><span class="muted">Rounds in ${year}</span><b>${(byYear[year] || 0).toLocaleString()}</b></div>
     <div class="card tile"><span class="muted">Avg rounds / session</span><b>${counted.length ? Math.floor(total / counted.length) : 0}</b></div></div>
     <h2>Rounds by year</h2><div class="card">${bars(Object.entries(byYear).sort())}</div>
-    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>
-    <h2>Undo history (phone and web)</h2><div class="card">${undoEntries.map((e) =>
-      `<div>${esc(e.label)} <span class="muted">(${esc(e.device)}) · ${new Date(e.time).toLocaleString()}</span></div>`).join("") ||
-      '<span class="muted">Nothing to undo yet.</span>'}</div>`;
+    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>`;
+}
+
+function adminView() {
+  return `<h2>Undo history (phone and web)</h2><div class="card">${undoEntries.map((e) =>
+      `<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;padding:3px 0"><span>${esc(e.label)} <span class="muted">(${esc(e.device)}) · ${new Date(e.time).toLocaleString()}</span></span>${
+        staleCount(e) ? '<span class="muted" title="Those items were changed again after this step, so it can no longer be undone safely">edited since</span>'
+          : `<button class="alt" data-undo="${esc(e.id)}">Undo</button>`}</div>`).join("") ||
+      '<span class="muted">Nothing to undo yet.</span>'}</div>
+    <h2>Backup</h2><div class="card muted">Backups are made from the phone app: Admin tab, then Backup, then Export (pictures included).</div>`;
 }
 
 function wire(v) {
   const s = $("#search");
   if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
+  v.querySelectorAll("[data-undo]").forEach((b) => b.onclick = () => undoLast(undoEntries.find((e) => e.id === b.dataset.undo)));
   v.querySelectorAll("[data-act]").forEach((b) => b.onclick = (ev) => {
     ev.stopPropagation();
     const id = b.dataset.id;
@@ -449,7 +474,7 @@ function gunView(id) {
       <button class="btn" id="editBtn">Edit</button><button class="alt" id="closeBtn">Close</button></div>
     ${g.photo ? `<div class="thumbs"><img data-photo="${esc(g.photo)}" alt="loading…" style="height:auto;max-height:260px;max-width:100%"></div>` : ""}
     ${g.description ? `<p><b>${esc(g.description)}</b></p>` : ""}
-    ${g.active ? "" : '<p class="muted">Retired: hidden from the gun picker</p>'}
+    ${g.active ? "" : '<p class="muted">Archived: hidden from the gun picker</p>'}
     <p class="muted">${g.notMine ? "Not my gun (rented or borrowed)" : cleanEvery(g) ? "Clean every " + cleanEvery(g) : "No cleaning reminder"}</p>
     ${g.notes ? `<h2>Upgrades and notes</h2><div style="white-space:pre-wrap">${esc(g.notes)}</div>` : ""}
     <div class="card ${s.due ? "due" : ""}" style="margin-top:12px">
@@ -512,10 +537,12 @@ function gunDialog(id) {
     if (id) { data.guns.set(id, out); gunView(id); } else closeDlg();
   };
   if (id) $("#del").onclick = () => {
-    const used = [...data.sessions.values()].some((s) => (s.guns || []).some((e) => e.gun === id));
-    if (used) return alert("This gun has sessions logged. Retire it instead (untick Active).");
-    if (!confirm("Delete this gun?")) return;
-    cleans.forEach(([cid]) => remove("cleanings", cid)); remove("guns", id); closeDlg();
+    $("#del").parentElement.innerHTML = `<span class="grow muted">Sessions are never deleted. Archived: hidden from the pick list, sessions show
+      "${esc(g.name)} (archived)". Deleted: sessions show "${esc(g.name)} (deleted)".</span>
+      <button class="alt" id="arch">Remove from pick list</button><button class="alt danger" id="perm">Delete permanently</button><button class="alt" id="back">Cancel</button>`;
+    $("#arch").onclick = () => { save("guns", id, { ...data.guns.get(id), active: false }); closeDlg(); };
+    $("#perm").onclick = () => { deleteGun(id); closeDlg(); };
+    $("#back").onclick = () => gunDialog(id);
   };
   dlg.showModal();
 }
@@ -551,7 +578,7 @@ function sessionDialog(id) {
       <label>Notes</label><textarea id="sNotes">${esc(s.notes)}</textarea>
       ${s.guns.map((e, i) => `<div class="entry"><div class="row">
         <select data-i="${i}" data-f="gun"><option value="">Pick a gun…</option>
-          ${guns.filter((g) => g.active || g.id === e.gun).map((g) => `<option value="${g.id}" ${g.id === e.gun ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select>
+          ${guns.filter((g) => g.active || g.id === e.gun).map((g) => `<option value="${g.id}" ${g.id === e.gun ? "selected" : ""}>${esc(gunLabel(g))}</option>`).join("")}</select>
         <input type="number" min="0" placeholder="rounds" style="width:90px" data-i="${i}" data-f="rounds" value="${e.rounds ?? ""}">
         <input class="grow" placeholder="notes" data-i="${i}" data-f="notes" value="${esc(e.notes || "")}">
         <button class="alt danger" data-rm="${i}">Remove</button></div>
