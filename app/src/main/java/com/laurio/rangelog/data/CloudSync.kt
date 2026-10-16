@@ -65,6 +65,8 @@ class CloudSync(
     private val context: Context,
     private val db: AppDatabase,
     private val photoFile: (String) -> File,
+    /** Pictures a change from the cloud no longer uses. Never deleted here: the repository removes them once no undo step needs them. */
+    private val dropPhotos: (Set<String>) -> Unit,
 ) {
     private val dao = db.dao()
     private val auth = FirebaseAuth.getInstance()
@@ -271,7 +273,7 @@ class CloudSync(
         if (existing == null) dao.insertGun(gun) else if (existing != gun) dao.updateGun(gun)
         if (gun.photo.isNotBlank()) scope.launch { downloadPhoto(gun.photo) }
         if (existing != null && existing.photo.isNotBlank() && existing.photo != gun.photo) {
-            photoFile(existing.photo).delete()
+            dropPhotos(setOf(existing.photo))
         }
     }
 
@@ -326,7 +328,7 @@ class CloudSync(
         }
         photos.forEach { scope.launch { downloadPhoto(it.str("fileName")) } }
         val kept = photos.map { it.str("fileName") }.toSet()
-        current?.photos.orEmpty().filter { it.fileName !in kept }.forEach { photoFile(it.fileName).delete() }
+        dropPhotos(current?.photos.orEmpty().map { it.fileName }.filter { it !in kept }.toSet())
     }
 
     private suspend fun removeSession(syncId: String) {
@@ -338,7 +340,7 @@ class CloudSync(
             dao.deleteSessionPhotos(s.id)
             dao.deleteSessionRow(s.id)
         }
-        photos.forEach { photoFile(it.fileName).delete() }
+        dropPhotos(photos.map { it.fileName }.toSet())
     }
 
     // ---------------- Phone -> cloud ----------------
@@ -397,24 +399,34 @@ class CloudSync(
         }
     }
 
-    /** Records the difference between two [docState]s as one undo step. Returns false if nothing was recorded. */
-    fun recordUndo(label: String, before: Map<String, Map<String, Any?>>, after: Map<String, Map<String, Any?>>): Boolean {
-        if (uid == null) return false
+    /**
+     * Records the difference between two [docState]s as one undo step. Returns the new step, or null if
+     * nothing was recorded (no change, signed out, or too many documents for one cloud document).
+     */
+    fun recordUndo(
+        label: String,
+        before: Map<String, Map<String, Any?>>,
+        after: Map<String, Map<String, Any?>>,
+    ): UndoEntry? {
+        if (uid == null) return null
         val ops = (before.keys + after.keys).filter { !sameDoc(before[it], after[it]) }.map { key ->
             val (c, id) = key.split("/", limit = 2)
-            mapOf("c" to c, "id" to id, "before" to before[key], "after" to after[key])
+            UndoOp(c, id, before[key], after[key])
         }
         // A cloud document holds 1 MB; a change touching hundreds of documents isn't recorded.
-        if (ops.isEmpty() || ops.size > 250) return false
-        val newId = UUID.randomUUID().toString()
-        val time = System.currentTimeMillis()
-        collection("undo").document(newId)
-            .set(mapOf("label" to label, "time" to time, "device" to "phone", "ops" to ops)).report()
-        // Keep only the newest UNDO_MAX steps.
-        // The new entry may or may not be in the list yet, so key by id.
-        (_undo.value.associate { it.id to it.time } + (newId to time)).entries.sortedByDescending { it.value }
-            .drop(UNDO_MAX).forEach { collection("undo").document(it.key).delete().report() }
-        return true
+        if (ops.isEmpty() || ops.size > 250) return null
+        val entry = UndoEntry(UUID.randomUUID().toString(), label, System.currentTimeMillis(), "phone", ops)
+        collection("undo").document(entry.id).set(
+            mapOf(
+                "label" to label, "time" to entry.time, "device" to entry.device,
+                "ops" to ops.map { mapOf("c" to it.c, "id" to it.id, "before" to it.before, "after" to it.after) },
+            )
+        ).report()
+        // Show it at once (the cloud's own update arrives a moment later), then keep only the newest UNDO_MAX.
+        val all = (listOf(entry) + _undo.value.filter { it.id != entry.id }).sortedByDescending { it.time }
+        _undo.value = all.take(UNDO_MAX)
+        all.drop(UNDO_MAX).forEach { collection("undo").document(it.id).delete().report() }
+        return entry
     }
 
     /** How many documents in [e] were changed again after it happened (so undoing would overwrite that). */

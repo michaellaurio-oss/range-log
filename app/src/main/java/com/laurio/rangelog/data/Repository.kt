@@ -67,7 +67,7 @@ data class PhotoImportResult(val added: Int, val duplicates: Int, val unmatched:
 
 class Repository(private val context: Context, private val db: AppDatabase) {
     private val dao = db.dao()
-    val sync = CloudSync(context, db) { name -> photoFile(name) }
+    val sync = CloudSync(context, db, { name -> photoFile(name) }, { names -> markUnwanted(names) })
 
     val json = Json {
         prettyPrint = true
@@ -80,8 +80,12 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         File(context.filesDir, "undo").deleteRecursively()
     }
 
-    /** Labels of destructive changes, so the UI can offer an Undo right away. */
-    val undoOffers = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    /** A destructive change that was just recorded, so the UI can offer an Undo for exactly that step. */
+    data class UndoOffer(val label: String, val entryId: String)
+    val undoOffers = MutableSharedFlow<UndoOffer>(extraBufferCapacity = 4)
+
+    /** Plain-language notices for the UI (shown as a message bar). */
+    val notices = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
     val guns: Flow<List<Gun>> = dao.observeGuns()
     val sessions: Flow<List<SessionFull>> = dao.observeSessions()
@@ -181,13 +185,34 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      * one undo step shared with the web page. Pictures the change removes are only deleted once no
      * undo step could bring them back. Nothing is recorded while signed out.
      */
-    private suspend fun <T> undoable(label: String, offer: Boolean = false, block: suspend () -> T): T {
+    private suspend fun <T> undoable(
+        label: String,
+        offer: Boolean = false,
+        /** Said to the user when a real change couldn't be recorded (signed out, or too big to record). */
+        notRecordedNotice: String? = null,
+        block: suspend () -> T,
+    ): T {
         val docsBefore = sync.docState()
         val photosBefore = photoNames()
         val result = block()
-        if (sync.recordUndo(label, docsBefore, sync.docState()) && offer) undoOffers.tryEmit(label)
-        discardPhotos(photosBefore - photoNames())
+        val docsAfter = sync.docState()
+        val step = sync.recordUndo(label, docsBefore, docsAfter)
+        if (step != null && offer) undoOffers.tryEmit(UndoOffer(label, step.id))
+        if (step == null && notRecordedNotice != null &&
+            (docsBefore.keys + docsAfter.keys).any { !CloudSync.sameDoc(docsBefore[it], docsAfter[it]) }
+        ) notices.tryEmit(notRecordedNotice)
+        // The step was just recorded, so its pictures are protected right away (the cloud list may lag).
+        val protect = if (step == null) emptySet() else step.ops.flatMap { CloudSync.photosIn(it.before) }.toSet()
+        discardPhotos(photosBefore - photoNames(), protect)
         return result
+    }
+
+    /** Marks pictures as unwanted without deleting them yet; a later cleanup removes them once no undo step needs them. */
+    fun markUnwanted(names: Set<String>) {
+        if (names.isEmpty()) return
+        synchronized(trashPrefs) {
+            trashPrefs.edit().putStringSet("trashPhotos", trashPrefs.getStringSet("trashPhotos", emptySet())!! + names).apply()
+        }
     }
 
     /** Recent undo steps from every device, newest first. */
@@ -199,26 +224,34 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     private val trashPrefs get() = context.getSharedPreferences("rangelog", Context.MODE_PRIVATE)
 
     /** Marks pictures as unwanted, then deletes every unwanted picture that no undo step still needs. */
-    private suspend fun discardPhotos(removed: Set<String>) = withContext(Dispatchers.IO) {
-        val trash = trashPrefs.getStringSet("trashPhotos", emptySet())!! + removed
-        val keep = photoNames() + undoPhotos()
-        trash.filter { it !in keep }.forEach { photoFile(it).delete() }
-        trashPrefs.edit().putStringSet("trashPhotos", trash.filter { it in keep }.toSet()).apply()
-    }
+    private suspend fun discardPhotos(removed: Set<String>, protect: Set<String> = emptySet()) =
+        withContext(Dispatchers.IO) {
+            val keep = photoNames() + undoPhotos() + protect
+            synchronized(trashPrefs) {
+                val trash = trashPrefs.getStringSet("trashPhotos", emptySet())!! + removed
+                trash.filter { it !in keep }.forEach { photoFile(it).delete() }
+                trashPrefs.edit().putStringSet("trashPhotos", trash.filter { it in keep }.toSet()).apply()
+            }
+        }
 
     sealed interface UndoOutcome {
         data object NothingToUndo : UndoOutcome
         /** [changed] documents were edited again after the step, so undoing would overwrite those edits. */
-        data class Conflict(val label: String, val changed: Int) : UndoOutcome
+        data class Conflict(val label: String, val changed: Int, val entryId: String) : UndoOutcome
         data class Done(val label: String) : UndoOutcome
     }
 
-    /** Puts the log back as it was before the newest step (from any device). */
-    suspend fun undoLast(force: Boolean = false): UndoOutcome {
-        val entry = sync.undoEntries.value.firstOrNull() ?: return UndoOutcome.NothingToUndo
+    /**
+     * Puts the log back as it was before a step: the one with [entryId] (from an Undo offer), or the newest
+     * step from any device if none is given.
+     */
+    suspend fun undoLast(force: Boolean = false, entryId: String? = null): UndoOutcome {
+        val steps = sync.undoEntries.value
+        val entry = (if (entryId == null) steps.firstOrNull() else steps.firstOrNull { it.id == entryId })
+            ?: return UndoOutcome.NothingToUndo
         if (!force) {
             val changed = sync.undoConflicts(entry)
-            if (changed > 0) return UndoOutcome.Conflict(entry.label, changed)
+            if (changed > 0) return UndoOutcome.Conflict(entry.label, changed, entry.id)
         }
         val before = photoNames()
         sync.applyUndo(entry)
@@ -423,36 +456,51 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     suspend fun exportJson(): String = json.encodeToString(Backup.serializer(), currentBackup())
 
-    /** Writes a zip with backup.json plus every picture the log refers to. Returns how many pictures went in. */
-    suspend fun exportZip(out: OutputStream): Int = withContext(Dispatchers.IO) {
+    /**
+     * Builds a zip with backup.json plus every picture the log refers to, in a temporary file, and returns it
+     * with the picture count. The caller copies it to the chosen location and deletes it, so a failure here
+     * never touches (or empties) an existing backup file.
+     */
+    suspend fun exportZip(): Pair<File, Int> = withContext(Dispatchers.IO) {
         val text = exportJson()
         val names = photoNames()
         var count = 0
-        ZipOutputStream(out.buffered()).use { zip ->
-            zip.putNextEntry(ZipEntry("backup.json"))
-            zip.write(text.toByteArray())
-            zip.closeEntry()
-            for (name in names) {
-                val file = photoFile(name)
-                if (!file.exists()) continue
-                zip.putNextEntry(ZipEntry("photos/$name"))
-                file.inputStream().use { it.copyTo(zip) }
+        val temp = File.createTempFile("backup", ".zip", context.cacheDir)
+        try {
+            ZipOutputStream(temp.outputStream().buffered()).use { zip ->
+                zip.putNextEntry(ZipEntry("backup.json"))
+                zip.write(text.toByteArray())
                 zip.closeEntry()
-                count++
+                for (name in names) {
+                    val file = photoFile(name)
+                    if (!file.exists()) continue
+                    zip.putNextEntry(ZipEntry("photos/$name"))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                    count++
+                }
             }
+        } catch (e: Exception) {
+            temp.delete()
+            throw e
         }
-        count
+        temp to count
     }
 
     /** Restores from a zip made by [exportZip] or an older plain JSON backup. Returns how many pictures came back. */
     suspend fun importBackup(raw: InputStream): Int {
         val input = raw.buffered()
-        input.mark(4)
-        val head = ByteArray(2)
-        val read = input.read(head)
-        input.reset()
-        if (read != 2 || head[0] != 'P'.code.toByte() || head[1] != 'K'.code.toByte()) {
-            importJson(input.reader().readText())
+        // Reading from a file provider can be slow (Google Drive), so keep it off the main thread.
+        val plainText = withContext(Dispatchers.IO) {
+            input.mark(4)
+            val head = ByteArray(2)
+            val read = input.read(head)
+            input.reset()
+            val isZip = read == 2 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()
+            if (isZip) null else input.reader().readText()
+        }
+        if (plainText != null) {
+            importJson(plainText)
             return 0
         }
         var text: String? = null
@@ -468,8 +516,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
                             entry.name.startsWith("photos/") -> {
                                 val file = photoFile(File(entry.name).name) // name only, never a path
                                 if (!file.exists()) {
-                                    file.outputStream().use { zip.copyTo(it) }
                                     written += file
+                                    val n = file.outputStream().use { zip.copyTo(it) }
+                                    // Never leave an empty picture behind silently.
+                                    if (n == 0L) error("The picture ${file.name} in that backup is empty")
                                 }
                             }
                         }
@@ -485,11 +535,15 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         return written.size
     }
 
-    /** Replaces everything in the database with the contents of a backup file (can be undone). */
+    /** Replaces everything in the database with the contents of a backup file (undoable when signed in and not huge). */
     suspend fun importJson(text: String) {
         val backup = json.decodeFromString(Backup.serializer(), text)
         require(backup.format == "rangelog-backup") { "Not a Range Log backup file" }
-        undoable("Restored a backup file") { replaceAll(backup) }
+        undoable(
+            "Restored a backup file",
+            notRecordedNotice = "This restore can't be undone (you're signed out, or it changed too many items). " +
+                "Keep your backup file.",
+        ) { replaceAll(backup) }
     }
 
     private suspend fun replaceAll(backup: Backup) {
