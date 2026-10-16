@@ -83,7 +83,7 @@
       <button data-tab="guns">Guns</button>
       <button data-tab="stats">Stats</button>
     </nav>
-    <div id="who"><span id="email"></span><button class="alt" id="signout">Sign out</button></div>
+    <div id="who"><span id="undoLabel" class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span><button class="alt" id="undoBtn" title="Undo the last change (Ctrl+Z)" disabled>↶ Undo</button><span id="email"></span><button class="alt" id="signout">Sign out</button></div>
   </header>
   <main id="view"></main>
 </div>
@@ -123,8 +123,61 @@ const today = () => { const n = new Date(); return Math.floor(Date.UTC(n.getFull
 const num = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
 const col = (name) => collection(fs, "users", uid, name);
 const ref = (name, id) => doc(fs, "users", uid, name, id);
-const save = (name, id, obj) => setDoc(ref(name, id), obj).catch(showErr);
-const remove = (name, id) => deleteDoc(ref(name, id)).catch(showErr);
+const save = (name, id, obj) => { record(name, id, obj); return setDoc(ref(name, id), obj).catch(showErr); };
+const remove = (name, id) => { record(name, id, null); return deleteDoc(ref(name, id)).catch(showErr); };
+
+// ---------- undo ----------
+// Each user action (one or more writes made together) is remembered as the documents' previous
+// contents, in this browser, so the last 10 actions can be put back. Pictures are never deleted
+// from the cloud, so undoing a change that dropped one brings it back too.
+const UNDO_MAX = 10;
+let group = null;
+const undoKey = () => "undo-" + uid;
+const undoStack = () => { try { return JSON.parse(localStorage.getItem(undoKey()) || "[]"); } catch { return []; } };
+function putStack(s) {
+  try { localStorage.setItem(undoKey(), JSON.stringify(s.slice(-UNDO_MAX))); } catch {}
+  renderUndo();
+}
+function renderUndo() {
+  const top = uid ? undoStack().pop() : null;
+  $("#undoBtn").disabled = !top;
+  $("#undoLabel").textContent = top ? top.label : "";
+}
+const UNDO_WEIGHT = { sessions: 2, guns: 2, cleanings: 1 };
+function describe(name, prev, next) {
+  const verb = prev && next ? "Edited" : prev ? "Deleted" : "Added";
+  const d = next || prev;
+  if (name === "sessions") return verb + " session " + fmtDate(d.date);
+  if (name === "guns") return verb + " gun " + d.name;
+  return verb + " a cleaning";
+}
+function record(name, id, next) {
+  const raw = data[name].get(id);
+  const prev = raw === undefined ? null : structuredClone(raw);
+  if (prev === null && next === null) return;
+  if (!group) {
+    group = { time: Date.now(), ops: [], weight: -1, label: "" };
+    // Everything a click writes happens in one go, so it ends up in one undo step.
+    queueMicrotask(() => {
+      const g = group; group = null;
+      if (g.ops.length) putStack([...undoStack(), { label: g.label, time: g.time, ops: g.ops }]);
+    });
+  }
+  group.ops.push({ name, id, prev });
+  if (UNDO_WEIGHT[name] > group.weight) { group.weight = UNDO_WEIGHT[name]; group.label = describe(name, prev, next); }
+}
+async function undoLast() {
+  const s = undoStack(); const e = s.pop();
+  if (!e) return;
+  putStack(s);
+  try {
+    for (const op of [...e.ops].reverse()) {
+      await (op.prev === null ? deleteDoc(ref(op.name, op.id)) : setDoc(ref(op.name, op.id), op.prev));
+    }
+    if ($("#dlg").open) $("#dlg").close();
+    $("#status").textContent = "Undone: " + e.label;
+  } catch (err) { showErr(err); }
+}
 const photoCache = new Map();
 function photoData(name) {
   if (!photoCache.has(name)) {
@@ -211,12 +264,19 @@ $("#signinBtn").onclick = async () => {
   catch (e) { $("#signinErr").textContent = e.message; }
 };
 $("#signout").onclick = () => signOut(auth);
+$("#undoBtn").onclick = undoLast;
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || $("#dlg").open || $("#lb").open) return;
+  e.preventDefault(); undoLast();
+});
 
 onAuthStateChanged(auth, (user) => {
   unsubs.forEach((u) => u()); unsubs = [];
   for (const m of Object.values(data)) m.clear();
-  if (!user) { uid = null; $("#signin").classList.remove("hidden"); $("#app").classList.add("hidden"); return; }
+  if (!user) { uid = null; renderUndo(); $("#signin").classList.remove("hidden"); $("#app").classList.add("hidden"); return; }
   uid = user.uid;
+  renderUndo();
   $("#email").textContent = user.email;
   $("#signin").classList.add("hidden"); $("#app").classList.remove("hidden");
   for (const name of Object.keys(data)) {
