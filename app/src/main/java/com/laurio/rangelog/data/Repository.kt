@@ -208,6 +208,8 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+                // Without a taken date, Samsung Gallery files these at the very bottom.
+                put(MediaStore.Images.Media.DATE_TAKEN, photoFile(name).lastModified())
                 put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/Range Log")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
