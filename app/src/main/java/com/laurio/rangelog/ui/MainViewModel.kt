@@ -11,6 +11,7 @@ import com.laurio.rangelog.data.SyncStatus
 import com.laurio.rangelog.data.SessionFull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,12 +53,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // On open, say which guns are at or past their cleaning limit.
         viewModelScope.launch {
             val due = repo.gunSummaries.first { list -> list.isNotEmpty() }.filter { it.cleaningDue }
-            if (due.isEmpty()) return@launch
-            _messages.subscriptionCount.first { it > 0 }
-            val names = due.joinToString(", ") { it.gun.name }
-            _messages.emit("Time to clean: $names")
+            if (due.isNotEmpty()) _cleanReminder.value = due
         }
     }
+
+    // Guns to nag about on open; stays up until dismissed.
+    private val _cleanReminder = MutableStateFlow<List<GunSummary>?>(null)
+    val cleanReminder: StateFlow<List<GunSummary>?> = _cleanReminder
+    fun dismissCleanReminder() { _cleanReminder.value = null }
 
     fun markCleanedToday(gunId: Long) = viewModelScope.launch {
         repo.logCleaning(gunId, LocalDate.now(), "")

@@ -1,7 +1,26 @@
 package com.laurio.rangelog.ui
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DateRange
@@ -46,6 +65,64 @@ fun RangeLogNav() {
 
     LaunchedEffect(Unit) {
         mainVm.messages.collect { snackbar.showSnackbar(it) }
+    }
+
+    val reminder by mainVm.cleanReminder.collectAsState()
+    reminder?.let { due ->
+        // Pop-up-ad style: wide, loud, and only the buttons close it (back and outside taps do nothing).
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false,
+            ),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                border = BorderStroke(4.dp, MaterialTheme.colorScheme.error),
+            ) {
+                Box {
+                    IconButton(
+                        onClick = { mainVm.dismissCleanReminder() },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    }
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp, 40.dp, 24.dp, 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Text(
+                            "CLEAN YOUR GUN!",
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                        due.forEach { s ->
+                            val over = s.roundsSinceCleaning - (s.gun.cleanInterval ?: 0)
+                            Text(
+                                "${s.gun.name}\n${s.roundsSinceCleaning} rds since cleaning" +
+                                    if (over > 0) " ($over over)" else "",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                        Button(
+                            onClick = { mainVm.dismissCleanReminder() },
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                        ) {
+                            Text("Close", style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Scaffold(
