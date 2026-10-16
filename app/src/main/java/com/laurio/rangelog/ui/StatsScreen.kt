@@ -53,7 +53,7 @@ fun StatsScreen(vm: MainViewModel) {
     val activity = LocalContext.current as? Activity
     var confirmImport by remember { mutableStateOf(false) }
 
-    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportTo(uri)
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -164,13 +164,13 @@ fun StatsScreen(vm: MainViewModel) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Backup", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Save everything to a file (for example to Google Drive) so you don't lose your log " +
-                            "if you change phones. Photos aren't included in the backup file.",
+                        "Save everything, pictures included, to a zip file (for example to Google Drive) so you " +
+                            "don't lose your log if you change phones. Restore also accepts older .json backups.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = {
-                            exporter.launch("RangeLog-backup-${LocalDate.now()}.json")
+                            exporter.launch("RangeLog-backup-${LocalDate.now()}.zip")
                         }) { Text("Export") }
                         OutlinedButton(onClick = { confirmImport = true }) { Text("Restore") }
                     }
@@ -187,7 +187,9 @@ fun StatsScreen(vm: MainViewModel) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmImport = false
-                    importer.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+                    importer.launch(
+                        arrayOf("application/zip", "application/x-zip-compressed", "application/json", "text/plain", "application/octet-stream")
+                    )
                 }) { Text("Choose file") }
             },
             dismissButton = { TextButton(onClick = { confirmImport = false }) { Text("Cancel") } },
