@@ -64,15 +64,17 @@ Explain build and install steps plainly and prefer doing things over telling him
 
 ## Undo (added 2026-10-16)
 
-- `data/UndoLog.kt` keeps the last 10 changes as full-DB snapshots (`filesDir/undo/*.json`), taken by
-  `Repository.undoable {}` before every save/delete/cleaning/photo-import/restore. `undoLast()` restores
-  the snapshot via `replaceAll` (phone becomes the truth, pushed to the cloud).
-- Photo files are never deleted directly: removed names go in a prefs "trash" set and are deleted only when
-  neither the DB nor any undo snapshot references them. New repository writes must go through `undoable`.
-- On the phone only its own changes are undoable (not ones arriving from the web page). Snackbar Undo after
-  deletes; Undo card on the Stats tab. The web page has its own separate undo (header button / Ctrl+Z): it
-  records each click's writes in `save`/`remove` (previous doc contents, last 10, kept in that browser's
-  localStorage) and writes them back; it never deletes photo docs, so pictures come back too. Gun pictures live in the same photos folder (`Gun.photo`, `cleanMonths`, DB v4).
+- One shared history of the last 10 changes in Firestore, `users/{uid}/undo/{id}`:
+  `{label, time, device: "phone"|"web", ops: [{c, id, before, after}]}` (c = guns|sessions|cleanings, id = syncId,
+  before/after = the cloud doc or null). Needs sign-in; nothing is recorded or undoable while signed out.
+- Phone: `Repository.undoable {}` wraps every save/delete/cleaning/photo-import/restore, diffing
+  `CloudSync.docState()` before and after (`recordUndo`). `undoLast(force)` checks `undoConflicts` (docs edited
+  since the step) and `applyUndo` reverts locally and in the cloud. New repository writes must go through `undoable`.
+- Web: `save`/`remove` call `record()`, which groups one click's writes into one entry; `undoLast()` mirrors the
+  phone, with a `confirm` on conflicts. Header button, Ctrl+Z, history card on the Stats tab.
+- Photo files on the phone are never deleted directly: removed names go in a prefs "trash" set and are deleted only
+  when neither the DB nor any undo entry references them. Cloud photo docs are never deleted, so pictures always come back.
+- Gun pictures live in the same photos folder (`Gun.photo`, `cleanMonths`, DB v4).
 
 ## Stack
 

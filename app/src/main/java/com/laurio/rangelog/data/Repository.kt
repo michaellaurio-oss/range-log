@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -69,7 +70,11 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         ignoreUnknownKeys = true
     }
 
-    val undo = UndoLog(context, json)
+    init {
+        // Earlier builds kept undo snapshots on the phone; the history now lives in the cloud.
+        File(context.filesDir, "undo").deleteRecursively()
+    }
+
     /** Labels of destructive changes, so the UI can offer an Undo right away. */
     val undoOffers = MutableSharedFlow<String>(extraBufferCapacity = 4)
 
@@ -120,7 +125,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     /** Deletes a gun only if it has never been logged in a session. Returns false otherwise. */
     suspend fun deleteGunIfUnused(id: Long): Boolean =
-        undoable("Deleted gun ${dao.getGun(id)?.name.orEmpty()}", offer = true, changed = { it }) {
+        undoable("Deleted gun ${dao.getGun(id)?.name.orEmpty()}", offer = true) {
             sync.exclusive {
                 if (dao.sessionCountForGun(id) > 0) return@exclusive false
                 val gun = dao.getGun(id)
@@ -167,43 +172,53 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         (dao.allPhotos().map { it.fileName } + dao.allGuns().map { it.photo }).filter { it.isNotBlank() }.toSet()
 
     /**
-     * Runs a change to the log and remembers how things looked before it. Pictures the change
-     * removes are only deleted once no undo step could bring them back.
+     * Runs a change to the log and records which cloud documents it changed (before and after) as
+     * one undo step shared with the web page. Pictures the change removes are only deleted once no
+     * undo step could bring them back. Nothing is recorded while signed out.
      */
-    private suspend fun <T> undoable(
-        label: String,
-        offer: Boolean = false,
-        changed: (T) -> Boolean = { true },
-        block: suspend () -> T,
-    ): T {
-        val snapshot = currentBackup()
-        val before = photoNames()
+    private suspend fun <T> undoable(label: String, offer: Boolean = false, block: suspend () -> T): T {
+        val docsBefore = sync.docState()
+        val photosBefore = photoNames()
         val result = block()
-        if (changed(result)) {
-            undo.push(label, snapshot)
-            if (offer) undoOffers.tryEmit(label)
-        }
-        discardPhotos(before - photoNames())
+        if (sync.recordUndo(label, docsBefore, sync.docState()) && offer) undoOffers.tryEmit(label)
+        discardPhotos(photosBefore - photoNames())
         return result
     }
+
+    /** Recent undo steps from every device, newest first. */
+    val undoEntries: StateFlow<List<UndoEntry>> get() = sync.undoEntries
+
+    private fun undoPhotos(): Set<String> = sync.undoEntries.value
+        .flatMap { e -> e.ops.flatMap { CloudSync.photosIn(it.before) + CloudSync.photosIn(it.after) } }.toSet()
 
     private val trashPrefs get() = context.getSharedPreferences("rangelog", Context.MODE_PRIVATE)
 
     /** Marks pictures as unwanted, then deletes every unwanted picture that no undo step still needs. */
     private suspend fun discardPhotos(removed: Set<String>) = withContext(Dispatchers.IO) {
         val trash = trashPrefs.getStringSet("trashPhotos", emptySet())!! + removed
-        val keep = photoNames() + undo.referencedPhotos()
+        val keep = photoNames() + undoPhotos()
         trash.filter { it !in keep }.forEach { photoFile(it).delete() }
         trashPrefs.edit().putStringSet("trashPhotos", trash.filter { it in keep }.toSet()).apply()
     }
 
-    /** Puts the log back as it was before the latest change. Returns what was undone, or null. */
-    suspend fun undoLast(): String? {
-        val entry = undo.pop() ?: return null
+    sealed interface UndoOutcome {
+        data object NothingToUndo : UndoOutcome
+        /** [changed] documents were edited again after the step, so undoing would overwrite those edits. */
+        data class Conflict(val label: String, val changed: Int) : UndoOutcome
+        data class Done(val label: String) : UndoOutcome
+    }
+
+    /** Puts the log back as it was before the newest step (from any device). */
+    suspend fun undoLast(force: Boolean = false): UndoOutcome {
+        val entry = sync.undoEntries.value.firstOrNull() ?: return UndoOutcome.NothingToUndo
+        if (!force) {
+            val changed = sync.undoConflicts(entry)
+            if (changed > 0) return UndoOutcome.Conflict(entry.label, changed)
+        }
         val before = photoNames()
-        replaceAll(entry.backup)
+        sync.applyUndo(entry)
         discardPhotos(before - photoNames())
-        return entry.label
+        return UndoOutcome.Done(entry.label)
     }
 
     // ---------------- Sessions ----------------
@@ -341,7 +356,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      * 2024121001.JPG. Files already imported (same name on that session) are skipped.
      */
     suspend fun importPhotosByName(uris: List<Uri>): PhotoImportResult =
-        undoable("Imported photos", changed = { it.added > 0 }) { importPhotosByNameNow(uris) }
+        undoable("Imported photos") { importPhotosByNameNow(uris) }
 
     private suspend fun importPhotosByNameNow(uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
         val pattern = Regex("""^(\d{4})(\d{2})(\d{2})(\d{2,})\.jpe?g$""", RegexOption.IGNORE_CASE)

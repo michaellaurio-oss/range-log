@@ -22,7 +22,9 @@ import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.QuerySnapshot
+import java.util.UUID
 import com.google.firebase.firestore.Source
 import com.laurio.rangelog.R
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +37,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
+
+/** One document changed by an undoable step: what it looked like before and after (null = absent). */
+data class UndoOp(val c: String, val id: String, val before: Map<String, Any?>?, val after: Map<String, Any?>?)
+
+/** One undoable step, shared by every device through users/{uid}/undo/{id}. */
+data class UndoEntry(val id: String, val label: String, val time: Long, val device: String, val ops: List<UndoOp>)
 
 data class SyncStatus(
     val email: String? = null,
@@ -67,6 +75,10 @@ class CloudSync(
 
     private val _status = MutableStateFlow(SyncStatus())
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+
+    private val _undo = MutableStateFlow<List<UndoEntry>>(emptyList())
+    /** The last [UNDO_MAX] changes from any device, newest first. */
+    val undoEntries: StateFlow<List<UndoEntry>> = _undo.asStateFlow()
 
     private var registrations: List<ListenerRegistration> = emptyList()
     private val health = mutableMapOf<String, Boolean>() // collection -> in step with the server
@@ -118,6 +130,7 @@ class CloudSync(
         registrations.forEach { it.remove() }
         registrations = emptyList()
         health.clear()
+        _undo.value = emptyList()
     }
 
     // ---------------- Starting up after sign-in ----------------
@@ -191,6 +204,11 @@ class CloudSync(
 
     private fun listen(email: String?) {
         detach()
+        registrations = registrations + collection("undo")
+            .orderBy("time", Query.Direction.DESCENDING).limit(UNDO_MAX.toLong())
+            .addSnapshotListener { snap, _ ->
+                if (snap != null) _undo.value = snap.documents.mapNotNull { parseUndo(it.id, it.data) }
+            }
         COLLECTIONS.forEach { name ->
             health[name] = false
             registrations = registrations + collection(name).addSnapshotListener(
@@ -364,6 +382,80 @@ class CloudSync(
         (ref("cleanings", syncId) ?: return dirtyIfSignedOut()).delete().report()
     }
 
+    // ---------------- Undo history (shared with the web page) ----------------
+
+    /** Every synced document as it would be written to the cloud right now, keyed "collection/syncId". */
+    suspend fun docState(): Map<String, Map<String, Any?>> {
+        val guns = dao.allGuns()
+        val gunSync = guns.associate { it.id to it.syncId }
+        return buildMap {
+            guns.forEach { put("guns/${it.syncId}", gunDoc(it)) }
+            dao.allSessionsFull().forEach { put("sessions/${it.session.syncId}", sessionDoc(it)) }
+            dao.allCleanings().forEach { c ->
+                gunSync[c.gunId]?.let { put("cleanings/${c.syncId}", cleaningDoc(c, it)) }
+            }
+        }
+    }
+
+    /** Records the difference between two [docState]s as one undo step. Returns false if nothing was recorded. */
+    fun recordUndo(label: String, before: Map<String, Map<String, Any?>>, after: Map<String, Map<String, Any?>>): Boolean {
+        if (uid == null) return false
+        val ops = (before.keys + after.keys).filter { !sameDoc(before[it], after[it]) }.map { key ->
+            val (c, id) = key.split("/", limit = 2)
+            mapOf("c" to c, "id" to id, "before" to before[key], "after" to after[key])
+        }
+        // A cloud document holds 1 MB; a change touching hundreds of documents isn't recorded.
+        if (ops.isEmpty() || ops.size > 250) return false
+        val newId = UUID.randomUUID().toString()
+        val time = System.currentTimeMillis()
+        collection("undo").document(newId)
+            .set(mapOf("label" to label, "time" to time, "device" to "phone", "ops" to ops)).report()
+        // Keep only the newest UNDO_MAX steps.
+        // The new entry may or may not be in the list yet, so key by id.
+        (_undo.value.associate { it.id to it.time } + (newId to time)).entries.sortedByDescending { it.value }
+            .drop(UNDO_MAX).forEach { collection("undo").document(it.key).delete().report() }
+        return true
+    }
+
+    /** How many documents in [e] were changed again after it happened (so undoing would overwrite that). */
+    suspend fun undoConflicts(e: UndoEntry): Int {
+        val now = docState()
+        return e.ops.count { !sameDoc(now["${it.c}/${it.id}"], it.after) }
+    }
+
+    /** Puts every document in [e] back as it was, here and in the cloud, and removes the step. */
+    suspend fun applyUndo(e: UndoEntry) = mutex.withLock {
+        val order = listOf("cleanings", "sessions", "guns")
+        // Remove what the step created (children first), then restore what it changed or deleted (parents first).
+        for (c in order) e.ops.filter { it.c == c && it.before == null }.forEach {
+            when (c) {
+                "guns" -> dao.deleteGunBySync(it.id)
+                "sessions" -> removeSession(it.id)
+                else -> dao.deleteCleaningBySync(it.id)
+            }
+            ref(c, it.id)?.delete()?.report()
+        }
+        for (c in order.reversed()) e.ops.filter { it.c == c && it.before != null }.forEach {
+            when (c) {
+                "guns" -> applyGun(it.id, it.before!!)
+                "sessions" -> applySession(it.id, it.before!!)
+                else -> applyCleaning(it.id, it.before!!)
+            }
+            ref(c, it.id)?.set(it.before!!)?.report()
+        }
+        retryDeferred()
+        ref("undo", e.id)?.delete()?.report()
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseUndo(id: String, d: Map<String, Any?>?): UndoEntry? {
+        d ?: return null
+        val ops = (d["ops"] as? List<Map<String, Any?>>).orEmpty().map {
+            UndoOp(it.str("c"), it.str("id"), it["before"] as? Map<String, Any?>, it["after"] as? Map<String, Any?>)
+        }
+        return UndoEntry(id, d.str("label"), d.num("time") ?: 0, d.str("device"), ops)
+    }
+
     /** After a restore from a backup file: the phone's data becomes the truth. */
     suspend fun afterRestore(restore: suspend () -> Unit) = mutex.withLock {
         restore()
@@ -473,7 +565,24 @@ class CloudSync(
     }
 
     companion object {
+        const val UNDO_MAX = 10
         private val COLLECTIONS = listOf("guns", "sessions", "cleanings")
+
+        /** Same document contents? Numbers compare by value, and missing, null and "" are alike. */
+        fun sameDoc(a: Any?, b: Any?): Boolean = when {
+            a is Number && b is Number -> a.toDouble() == b.toDouble()
+            a is Map<*, *> && b is Map<*, *> -> (a.keys + b.keys).all { sameDoc(a[it], b[it]) }
+            a is List<*> && b is List<*> -> a.size == b.size && a.indices.all { sameDoc(a[it], b[it]) }
+            else -> (if (a == "") null else a) == (if (b == "") null else b)
+        }
+
+        /** Picture file names mentioned by a gun or session document. */
+        @Suppress("UNCHECKED_CAST")
+        fun photosIn(doc: Map<String, Any?>?): List<String> {
+            doc ?: return emptyList()
+            val session = (doc["photos"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { it["fileName"] as? String }
+            return (session + listOfNotNull(doc["photo"] as? String)).filter { it.isNotBlank() }
+        }
 
         private fun Map<String, Any?>.str(key: String) = this[key] as? String ?: ""
         private fun Map<String, Any?>.num(key: String) = (this[key] as? Number)?.toLong()

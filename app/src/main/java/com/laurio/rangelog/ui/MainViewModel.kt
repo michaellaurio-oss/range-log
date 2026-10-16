@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.laurio.rangelog.RangeLogApp
 import com.laurio.rangelog.data.GunSummary
+import com.laurio.rangelog.data.Repository
 import com.laurio.rangelog.data.SyncStatus
 import com.laurio.rangelog.data.SessionFull
 import kotlinx.coroutines.Dispatchers
@@ -62,15 +63,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val cleanReminder: StateFlow<List<GunSummary>?> = _cleanReminder
     fun dismissCleanReminder() { _cleanReminder.value = null }
 
-    val undoItems = repo.undo.items
+    val undoItems = repo.undoEntries
 
-    fun undo() = viewModelScope.launch {
-        val label = runCatching { repo.undoLast() }.getOrElse {
+    /** Set when the newest step's items were edited again since; the UI asks before overwriting. */
+    private val _undoConflict = MutableStateFlow<Repository.UndoOutcome.Conflict?>(null)
+    val undoConflict: StateFlow<Repository.UndoOutcome.Conflict?> = _undoConflict
+
+    fun undo(force: Boolean = false) = viewModelScope.launch {
+        _undoConflict.value = null
+        val outcome = runCatching { repo.undoLast(force) }.getOrElse {
             _messages.tryEmit("Undo failed: ${it.message}")
             return@launch
         }
-        _messages.tryEmit(if (label == null) "Nothing to undo" else "Undone: $label")
+        when (outcome) {
+            Repository.UndoOutcome.NothingToUndo ->
+                _messages.tryEmit(if (repo.sync.status.value.email == null) "Sign in to use undo" else "Nothing to undo")
+            is Repository.UndoOutcome.Conflict -> _undoConflict.value = outcome
+            is Repository.UndoOutcome.Done -> _messages.tryEmit("Undone: ${outcome.label}")
+        }
     }
+
+    fun dismissUndoConflict() { _undoConflict.value = null }
 
     fun markCleanedToday(gunId: Long) = viewModelScope.launch {
         repo.logCleaning(gunId, LocalDate.now(), "")

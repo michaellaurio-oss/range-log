@@ -96,7 +96,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc }
+import { initializeFirestore, persistentLocalCache, collection, doc, onSnapshot, setDoc, deleteDoc, getDoc, query, orderBy, limit }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const app = initializeApp({
@@ -127,56 +127,72 @@ const save = (name, id, obj) => { record(name, id, obj); return setDoc(ref(name,
 const remove = (name, id) => { record(name, id, null); return deleteDoc(ref(name, id)).catch(showErr); };
 
 // ---------- undo ----------
-// Each user action (one or more writes made together) is remembered as the documents' previous
-// contents, in this browser, so the last 10 actions can be put back. Pictures are never deleted
-// from the cloud, so undoing a change that dropped one brings it back too.
+// Each user action (one or more writes made together) is stored in users/{uid}/undo as the
+// documents' contents before and after. The phone writes entries in the same format, so there is
+// one history shared by every device. Pictures are never deleted from the cloud, so undoing a
+// change that dropped one brings it back too.
 const UNDO_MAX = 10;
 let group = null;
-const undoKey = () => "undo-" + uid;
-const undoStack = () => { try { return JSON.parse(localStorage.getItem(undoKey()) || "[]"); } catch { return []; } };
-function putStack(s) {
-  try { localStorage.setItem(undoKey(), JSON.stringify(s.slice(-UNDO_MAX))); } catch {}
-  renderUndo();
+let undoEntries = []; // newest first
+const clean = (x) => (x == null ? null : JSON.parse(JSON.stringify(x))); // no undefined (Firestore rejects it)
+// Same contents? Missing, null and "" count as alike (the phone and web write slightly different shapes).
+function sameDoc(a, b) {
+  if (a === "") a = null; if (b === "") b = null;
+  if (a == null || b == null) return a == null && b == null;
+  if (typeof a === "object" && typeof b === "object") {
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => sameDoc(x, b[i]));
+    return [...new Set([...Object.keys(a), ...Object.keys(b)])].every((k) => sameDoc(a[k], b[k]));
+  }
+  return a === b;
 }
 function renderUndo() {
-  const top = uid ? undoStack().pop() : null;
+  const top = uid ? undoEntries[0] : null;
   $("#undoBtn").disabled = !top;
   $("#undoLabel").textContent = top ? top.label : "";
+  if (uid && tab === "stats") render();
 }
 const UNDO_WEIGHT = { sessions: 2, guns: 2, cleanings: 1 };
-function describe(name, prev, next) {
-  const verb = prev && next ? "Edited" : prev ? "Deleted" : "Added";
-  const d = next || prev;
+function describe(name, before, after) {
+  const verb = before && after ? "Edited" : before ? "Deleted" : "Added";
+  const d = after || before;
   if (name === "sessions") return verb + " session " + fmtDate(d.date);
   if (name === "guns") return verb + " gun " + d.name;
   return verb + " a cleaning";
 }
 function record(name, id, next) {
-  const raw = data[name].get(id);
-  const prev = raw === undefined ? null : structuredClone(raw);
-  if (prev === null && next === null) return;
+  const before = clean(data[name].get(id)), after = clean(next);
+  if (before === null && after === null) return;
   if (!group) {
     group = { time: Date.now(), ops: [], weight: -1, label: "" };
     // Everything a click writes happens in one go, so it ends up in one undo step.
     queueMicrotask(() => {
       const g = group; group = null;
-      if (g.ops.length) putStack([...undoStack(), { label: g.label, time: g.time, ops: g.ops }]);
+      if (!g.ops.length || g.ops.length > 250) return;
+      const eid = crypto.randomUUID();
+      setDoc(ref("undo", eid), { label: g.label, time: g.time, device: "web", ops: g.ops }).catch(showErr);
+      // The new entry may or may not be in the list yet, so key by id.
+      const known = new Map(undoEntries.map((e) => [e.id, e.time])).set(eid, g.time);
+      [...known].sort((a, b) => b[1] - a[1]).slice(UNDO_MAX).forEach(([i]) => deleteDoc(ref("undo", i)).catch(showErr));
     });
   }
-  group.ops.push({ name, id, prev });
-  if (UNDO_WEIGHT[name] > group.weight) { group.weight = UNDO_WEIGHT[name]; group.label = describe(name, prev, next); }
+  const again = group.ops.find((o) => o.c === name && o.id === id);
+  if (again) again.after = after; else group.ops.push({ c: name, id, before, after });
+  if (UNDO_WEIGHT[name] > group.weight) { group.weight = UNDO_WEIGHT[name]; group.label = describe(name, before, after); }
 }
 async function undoLast() {
-  const s = undoStack(); const e = s.pop();
+  const e = undoEntries[0];
   if (!e) return;
-  putStack(s);
-  try {
-    for (const op of [...e.ops].reverse()) {
-      await (op.prev === null ? deleteDoc(ref(op.name, op.id)) : setDoc(ref(op.name, op.id), op.prev));
-    }
-    if ($("#dlg").open) $("#dlg").close();
-    $("#status").textContent = "Undone: " + e.label;
-  } catch (err) { showErr(err); }
+  const changed = e.ops.filter((o) => !sameDoc(data[o.c].get(o.id), o.after)).length;
+  if (changed && !confirm("“" + e.label + "”: " + changed + " item" + (changed === 1 ? " was" : "s were") +
+    " edited again after that. Undoing now would overwrite those newer edits. Undo anyway?")) return;
+  const order = ["cleanings", "sessions", "guns"];
+  // Remove what the step created (children first), then restore what it changed or deleted (parents first).
+  for (const c of order) for (const o of e.ops.filter((o) => o.c === c && o.before == null)) deleteDoc(ref(c, o.id)).catch(showErr);
+  for (const c of [...order].reverse()) for (const o of e.ops.filter((o) => o.c === c && o.before != null)) setDoc(ref(c, o.id), o.before).catch(showErr);
+  deleteDoc(ref("undo", e.id)).catch(showErr);
+  if ($("#dlg").open) $("#dlg").close();
+  $("#status").textContent = "Undone: " + e.label;
 }
 const photoCache = new Map();
 function photoData(name) {
@@ -274,10 +290,13 @@ document.addEventListener("keydown", (e) => {
 onAuthStateChanged(auth, (user) => {
   unsubs.forEach((u) => u()); unsubs = [];
   for (const m of Object.values(data)) m.clear();
-  if (!user) { uid = null; renderUndo(); $("#signin").classList.remove("hidden"); $("#app").classList.add("hidden"); return; }
+  if (!user) { uid = null; undoEntries = []; renderUndo(); $("#signin").classList.remove("hidden"); $("#app").classList.add("hidden"); return; }
   uid = user.uid;
-  renderUndo();
   $("#email").textContent = user.email;
+  unsubs.push(onSnapshot(query(col("undo"), orderBy("time", "desc"), limit(UNDO_MAX)), (snap) => {
+    undoEntries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderUndo();
+  }, showErr));
   $("#signin").classList.add("hidden"); $("#app").classList.remove("hidden");
   for (const name of Object.keys(data)) {
     unsubs.push(onSnapshot(col(name), { includeMetadataChanges: true }, (snap) => {
@@ -396,7 +415,10 @@ function statsView() {
     <div class="card tile"><span class="muted">Rounds in ${year}</span><b>${(byYear[year] || 0).toLocaleString()}</b></div>
     <div class="card tile"><span class="muted">Avg rounds / session</span><b>${counted.length ? Math.floor(total / counted.length) : 0}</b></div></div>
     <h2>Rounds by year</h2><div class="card">${bars(Object.entries(byYear).sort())}</div>
-    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>`;
+    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>
+    <h2>Undo history (phone and web)</h2><div class="card">${undoEntries.map((e) =>
+      `<div>${esc(e.label)} <span class="muted">(${esc(e.device)}) · ${new Date(e.time).toLocaleString()}</span></div>`).join("") ||
+      '<span class="muted">Nothing to undo yet.</span>'}</div>`;
 }
 
 function wire(v) {
