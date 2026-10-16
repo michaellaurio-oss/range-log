@@ -355,7 +355,7 @@ function gunSummary(id) {
   }
   const roundsDue = !g.notMine && g.cleanInterval != null && since >= g.cleanInterval;
   // Months-based reminder only counts once the gun has been shot since its last cleaning.
-  const months = last !== null && (since > 0 || uncounted > 0) ? monthsBetween(last, today()) : null;
+  const months = last !== null ? monthsBetween(last, today()) : null; // counts even if the gun sat unused
   const monthsDue = !g.notMine && g.cleanMonths != null && months !== null && months >= g.cleanMonths;
   return { total, since, count, lastShot, last, uncounted, due: roundsDue || monthsDue };
 }
