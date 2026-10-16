@@ -104,13 +104,17 @@ fun StatsScreen(vm: MainViewModel) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Undo", style = MaterialTheme.typography.titleMedium)
                     if (undoItems.isEmpty()) {
-                        Text("Nothing to undo yet. Your last ${com.laurio.rangelog.data.UndoLog.MAX} changes are kept here, pictures included.",
-                            style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            if (sync.email == null) "Sign in with Google below to use undo. It's shared with the web page."
+                            else "Nothing to undo yet. The last ${com.laurio.rangelog.data.CloudSync.UNDO_MAX} changes " +
+                                "from this phone and the web page are kept here, pictures included.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     } else {
                         val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a") }
                         undoItems.forEach { item ->
                             Text(
-                                "${item.label} · " + java.time.Instant.ofEpochMilli(item.time)
+                                "${item.label} (${item.device}) · " + java.time.Instant.ofEpochMilli(item.time)
                                     .atZone(java.time.ZoneId.systemDefault()).format(fmt),
                                 style = MaterialTheme.typography.bodySmall,
                             )

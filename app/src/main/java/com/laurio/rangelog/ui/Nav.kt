@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -74,6 +76,22 @@ fun RangeLogNav() {
             val result = snackbar.showSnackbar(label, actionLabel = "Undo", duration = SnackbarDuration.Long)
             if (result == SnackbarResult.ActionPerformed) mainVm.undo()
         }
+    }
+
+    val conflict by mainVm.undoConflict.collectAsState()
+    conflict?.let { c ->
+        AlertDialog(
+            onDismissRequest = mainVm::dismissUndoConflict,
+            title = { Text("Changed since then") },
+            text = {
+                Text(
+                    "“${c.label}”: ${c.changed} item${if (c.changed == 1) " was" else "s were"} edited again " +
+                        "after that. Undoing now would overwrite those newer edits."
+                )
+            },
+            confirmButton = { TextButton(onClick = { mainVm.undo(force = true) }) { Text("Undo anyway") } },
+            dismissButton = { TextButton(onClick = mainVm::dismissUndoConflict) { Text("Cancel") } },
+        )
     }
 
     val reminder by mainVm.cleanReminder.collectAsState()
