@@ -256,9 +256,17 @@ function gunSummary(id) {
       if (last === null || s.date > last) { since += e.rounds ?? 0; if (e.rounds == null) uncounted++; }
     }
   }
-  const due = !g.notMine && g.cleanInterval != null && since >= g.cleanInterval;
-  return { total, since, count, lastShot, last, uncounted, due };
+  const roundsDue = !g.notMine && g.cleanInterval != null && since >= g.cleanInterval;
+  // Months-based reminder only counts once the gun has been shot since its last cleaning.
+  const months = last !== null && (since > 0 || uncounted > 0) ? monthsBetween(last, today()) : null;
+  const monthsDue = !g.notMine && g.cleanMonths != null && months !== null && months >= g.cleanMonths;
+  return { total, since, count, lastShot, last, uncounted, due: roundsDue || monthsDue };
 }
+function monthsBetween(a, b) {
+  const x = new Date(a * 86400000), y = new Date(b * 86400000);
+  return (y.getUTCFullYear() - x.getUTCFullYear()) * 12 + y.getUTCMonth() - x.getUTCMonth() - (y.getUTCDate() < x.getUTCDate() ? 1 : 0);
+}
+const cleanEvery = (g) => [g.cleanInterval ? g.cleanInterval + " rds" : "", g.cleanMonths ? g.cleanMonths + " months" : ""].filter(Boolean).join(" or ");
 
 // ---------- views ----------
 function render() {
@@ -300,12 +308,13 @@ function gunsView() {
   for (const g of guns) {
     const s = gunSummary(g.id);
     html += `<div class="card click ${s.due ? "due" : ""}" data-act="viewGun" data-id="${g.id}"><div class="row">
+      ${g.photo ? `<div class="thumbs" style="margin:0"><img data-photo="${esc(g.photo)}" alt="loading…"></div>` : ""}
       <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
         <div class="muted">${esc(g.description)}</div>
         <div class="muted">${s.total.toLocaleString()} rds total · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
         ${g.notMine ? '<div class="muted">Not my gun</div>' : `<div><b>${s.since.toLocaleString()} rds</b> since ${s.last ? "cleaned " + fmtDate(s.last) : "(never cleaned)"}
           ${s.uncounted ? `<span class="muted">· ${s.uncounted} uncounted</span>` : ""}</div>
-        <div class="muted">${g.cleanInterval ? (s.due ? "Cleaning due" : "Clean") + " every " + g.cleanInterval + " rds" : "No cleaning reminder"}</div>`}</div>
+        <div class="muted">${cleanEvery(g) ? (s.due ? "Cleaning due" : "Clean") + " every " + cleanEvery(g) : "No cleaning reminder"}</div>`}</div>
       ${g.notMine ? "" : `<button class="alt" data-act="cleanToday" data-id="${g.id}">Cleaned it today</button>`}</div></div>`;
   }
   return html;
@@ -355,9 +364,10 @@ function gunView(id) {
   const roundsIn = (x) => (x.guns || []).filter((e) => e.gun === id).reduce((t, e) => t + (e.rounds ?? 0), 0);
   dlg.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(g.name)}</h3>
       <button class="btn" id="editBtn">Edit</button><button class="alt" id="closeBtn">Close</button></div>
+    ${g.photo ? `<div class="thumbs"><img data-photo="${esc(g.photo)}" alt="loading…" style="height:auto;max-height:260px;max-width:100%"></div>` : ""}
     ${g.description ? `<p><b>${esc(g.description)}</b></p>` : ""}
     ${g.active ? "" : '<p class="muted">Retired: hidden from the gun picker</p>'}
-    <p class="muted">${g.notMine ? "Not my gun (rented or borrowed)" : g.cleanInterval ? "Clean every " + g.cleanInterval + " rounds" : "No cleaning reminder"}</p>
+    <p class="muted">${g.notMine ? "Not my gun (rented or borrowed)" : cleanEvery(g) ? "Clean every " + cleanEvery(g) : "No cleaning reminder"}</p>
     ${g.notes ? `<h2>Upgrades and notes</h2><div style="white-space:pre-wrap">${esc(g.notes)}</div>` : ""}
     <div class="card ${s.due ? "due" : ""}" style="margin-top:12px">
       <b>${s.total.toLocaleString()} rounds lifetime</b>
@@ -372,19 +382,23 @@ function gunView(id) {
   $("#editBtn").onclick = () => gunDialog(id);
   if ($("#cleanBtn")) $("#cleanBtn").onclick = () => { save("cleanings", crypto.randomUUID(), { gun: id, date: today(), notes: "" }); closeDlg(); };
   dlg.querySelectorAll("[data-sess]").forEach((r) => r.onclick = () => sessionView(r.dataset.sess));
+  fillPhotos(dlg);
   if (!dlg.open) dlg.showModal();
 }
 
 function gunDialog(id) {
-  const g = id ? data.guns.get(id) : { name: "", description: "", notes: "", cleanInterval: 500, active: true, notMine: false };
+  const g = id ? { ...data.guns.get(id) } : { name: "", description: "", notes: "", cleanInterval: 500, cleanMonths: null, photo: "", active: true, notMine: false };
   const cleans = id ? [...data.cleanings].filter(([, c]) => c.gun === id).sort((a, b) => b[1].date - a[1].date) : [];
   dlg.innerHTML = `<h3>${id ? "Edit gun" : "New gun"}</h3>
+    ${g.photo ? `<div class="thumbs"><div class="ph"><img data-photo="${esc(g.photo)}" alt="loading…" style="height:auto;max-height:200px;max-width:100%"><button class="alt" id="rmPhoto">×</button></div></div>` : ""}
+    <label>${g.photo ? "Change picture" : "Add a picture"} <input type="file" id="gPhoto" accept="image/*"></label>
     <label>Short name</label><input id="gName" value="${esc(g.name)}">
     <label>Full make / model</label><input id="gDesc" style="width:100%" value="${esc(g.description)}">
     <label>Upgrades and notes</label><textarea id="gNotes">${esc(g.notes)}</textarea>
     <label><input type="checkbox" id="gActive" ${g.active ? "checked" : ""}> Active (shows in the gun picker)</label>
     <label><input type="checkbox" id="gNotMine" ${g.notMine ? "checked" : ""}> Not my gun (rented or borrowed: no cleaning log or reminders)</label>
     <div id="cleanBits" class="${g.notMine ? "hidden" : ""}"><label>Clean every (rounds, blank = no reminder)</label><input id="gInt" type="number" min="1" value="${g.cleanInterval ?? ""}">
+    <label>…or every (months since last cleaning, blank = none)</label><input id="gMonths" type="number" min="1" value="${g.cleanMonths ?? ""}">
     ${id ? `<label>Cleaning log</label>${cleans.map(([cid, c]) => `<div class="row">${fmtDate(c.date)} ${esc(c.notes || "")}
       <button class="alt danger" data-del="${cid}">Delete</button></div>`).join("") || '<span class="muted">None yet</span>'}` : ""}</div>
     <div class="row" style="margin-top:16px"><button class="btn" id="ok">Save</button><button class="alt" id="cancel">Cancel</button>
@@ -392,10 +406,25 @@ function gunDialog(id) {
   dlg.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => { remove("cleanings", b.dataset.del); closeDlg(); });
   $("#cancel").onclick = () => (id ? gunView(id) : closeDlg());
   $("#gNotMine").onchange = () => $("#cleanBits").classList.toggle("hidden", $("#gNotMine").checked);
+  fillPhotos(dlg);
+  if ($("#rmPhoto")) $("#rmPhoto").onclick = () => { g.photo = ""; $("#rmPhoto").closest(".thumbs").remove(); };
+  $("#gPhoto").onchange = async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    try {
+      const name = "WEB_" + crypto.randomUUID() + ".jpg";
+      const data = await shrinkImage(f);
+      await setDoc(ref("photos", name), { data });
+      photoCache.set(name, Promise.resolve("data:image/jpeg;base64," + data));
+      g.photo = name;
+      $("#gPhoto").parentElement.firstChild.textContent = "Picture ready (save to keep it) ";
+    } catch (e) { alert(e.message); }
+  };
   $("#ok").onclick = () => {
     const name = $("#gName").value.trim(); if (!name) return;
     const out = { name, description: $("#gDesc").value.trim(), notes: $("#gNotes").value.trim(),
-      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null, active: $("#gActive").checked, notMine: $("#gNotMine").checked };
+      cleanInterval: (num($("#gInt").value) > 0) ? num($("#gInt").value) : null,
+      cleanMonths: (num($("#gMonths").value) > 0) ? num($("#gMonths").value) : null,
+      photo: g.photo || "", active: $("#gActive").checked, notMine: $("#gNotMine").checked };
     save("guns", id || crypto.randomUUID(), out);
     if (id) { data.guns.set(id, out); gunView(id); } else closeDlg();
   };

@@ -3,7 +3,16 @@
 package com.laurio.rangelog.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,7 +84,7 @@ import java.time.LocalDate
 data class GunSessionRow(val sessionId: Long, val date: Long, val rounds: Int?, val notes: String)
 
 class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidViewModel(app) {
-    private val repo = (app as RangeLogApp).repository
+    val repo = (app as RangeLogApp).repository
     val gunId: Long = handle.get<Long>("id") ?: 0L
 
     var name by mutableStateOf("")
@@ -83,12 +92,18 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
     var notes by mutableStateOf("")
     // New guns start at 500 rounds between cleanings; it's editable on the gun's screen.
     var cleanInterval by mutableStateOf(if (gunId == 0L) "500" else "")
+    var cleanMonths by mutableStateOf("")
+    var photo by mutableStateOf("")
     var active by mutableStateOf(true)
     var notMine by mutableStateOf(false)
     var loaded by mutableStateOf(gunId == 0L)
         private set
 
-    private fun snapshot() = listOf(name, description, notes, cleanInterval, active, notMine)
+    // Picture files copied in during this edit; removed again if the edit is thrown away.
+    private val addedPhotos = mutableSetOf<String>()
+    private var pendingCameraFile: String? = null
+
+    private fun snapshot() = listOf(name, description, notes, cleanInterval, cleanMonths, photo, active, notMine)
     private var baseline: List<Any?> = snapshot()
     val isDirty: Boolean get() = snapshot() != baseline
 
@@ -117,11 +132,14 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
 
     /** Loads the saved gun into the fields (also used to throw away unsaved edits). */
     fun load() = viewModelScope.launch {
+        discardAdded()
         repo.getGun(gunId)?.let { g ->
                 name = g.name
                 description = g.description
                 notes = g.notes
                 cleanInterval = g.cleanInterval?.toString() ?: ""
+                cleanMonths = g.cleanMonths?.toString() ?: ""
+                photo = g.photo
                 active = g.active
                 notMine = g.notMine
         }
@@ -141,12 +159,50 @@ class GunDetailViewModel(app: Application, handle: SavedStateHandle) : AndroidVi
                 description = description.trim(),
                 notes = notes.trim(),
                 cleanInterval = cleanInterval.toIntOrNull()?.takeIf { it > 0 },
+                cleanMonths = cleanMonths.toIntOrNull()?.takeIf { it > 0 },
+                photo = photo,
                 active = active,
                 notMine = notMine,
             )
         )
+        addedPhotos.clear()
         baseline = snapshot()
         onSaved()
+    }
+
+    fun newCameraUri(): Uri {
+        val (file, uri) = repo.newCameraTarget()
+        pendingCameraFile = file
+        return uri
+    }
+
+    fun onCameraResult(success: Boolean) {
+        val file = pendingCameraFile ?: return
+        pendingCameraFile = null
+        if (success) useNewPhoto(file) else repo.discardPhoto(file)
+    }
+
+    fun pickPhoto(uri: Uri?) {
+        if (uri == null) return
+        viewModelScope.launch { repo.importPhoto(uri)?.let(::useNewPhoto) }
+    }
+
+    private fun useNewPhoto(file: String) {
+        removePhoto()
+        addedPhotos += file
+        photo = file
+    }
+
+    fun removePhoto() {
+        // A file saved earlier is deleted when the gun is saved; one added in this edit goes now.
+        if (addedPhotos.remove(photo)) repo.discardPhoto(photo)
+        photo = ""
+    }
+
+    /** Throws away picture files added during an edit that wasn't saved. */
+    fun discardAdded() {
+        addedPhotos.forEach(repo::discardPhoto)
+        addedPhotos.clear()
     }
 
     fun delete(onDeleted: () -> Unit, onBlocked: () -> Unit) = viewModelScope.launch {
@@ -176,8 +232,10 @@ fun GunDetailScreen(
     var editing by rememberSaveable { mutableStateOf(vm.gunId == 0L) }
     var confirmDiscard by remember { mutableStateOf(false) }
     val stopEditing: () -> Unit = {
-        if (vm.gunId == 0L) onDone() else { vm.load(); editing = false }
+        if (vm.gunId == 0L) { vm.discardAdded(); onDone() } else { vm.load(); editing = false }
     }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { vm.onCameraResult(it) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { vm.pickPhoto(it) }
     val leave: () -> Unit = {
         if (!editing) onDone() else if (vm.isDirty) confirmDiscard = true else stopEditing()
     }
@@ -227,6 +285,21 @@ fun GunDetailScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (editing) {
+            if (vm.photo.isNotBlank()) {
+                AsyncImage(
+                    model = vm.repo.photoFile(vm.photo),
+                    contentDescription = "Gun photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(12.dp)),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { camera.launch(vm.newCameraUri()) }) { Text("Take photo") }
+                OutlinedButton(onClick = {
+                    picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text(if (vm.photo.isBlank()) "Add picture" else "Change") }
+                if (vm.photo.isNotBlank()) TextButton(onClick = { vm.removePhoto() }) { Text("Remove") }
+            }
             OutlinedTextField(
                 value = vm.name, onValueChange = { vm.name = it },
                 label = { Text("Short name (e.g. SP01)") }, singleLine = true,
@@ -257,6 +330,14 @@ fun GunDetailScreen(
                 value = vm.cleanInterval,
                 onValueChange = { v -> vm.cleanInterval = v.filter(Char::isDigit) },
                 label = { Text("Remind me to clean every … rounds (optional)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (!vm.notMine) OutlinedTextField(
+                value = vm.cleanMonths,
+                onValueChange = { v -> vm.cleanMonths = v.filter(Char::isDigit) },
+                label = { Text("…or every … months since last cleaning (optional)") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
@@ -403,6 +484,14 @@ fun GunDetailScreen(
 
 @Composable
 private fun GunReadOnlyDetails(vm: GunDetailViewModel) {
+    if (vm.photo.isNotBlank()) {
+        AsyncImage(
+            model = vm.repo.photoFile(vm.photo),
+            contentDescription = "Gun photo",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)),
+        )
+    }
     Text(vm.name, style = MaterialTheme.typography.headlineSmall)
     if (vm.description.isNotBlank()) Text(vm.description, style = MaterialTheme.typography.titleMedium)
     if (!vm.active) {
@@ -411,9 +500,12 @@ private fun GunReadOnlyDetails(vm: GunDetailViewModel) {
     if (vm.notMine) {
         Text("Not my gun (rented or borrowed)", style = MaterialTheme.typography.bodyMedium)
     } else {
-        val interval = vm.cleanInterval.toIntOrNull()
+        val parts = listOfNotNull(
+            vm.cleanInterval.toIntOrNull()?.let { "$it rounds" },
+            vm.cleanMonths.toIntOrNull()?.let { "$it months" },
+        )
         Text(
-            if (interval != null) "Clean every $interval rounds" else "No cleaning reminder",
+            if (parts.isEmpty()) "No cleaning reminder" else "Clean every " + parts.joinToString(" or "),
             style = MaterialTheme.typography.bodyMedium,
         )
     }

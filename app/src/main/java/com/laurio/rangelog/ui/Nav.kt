@@ -104,10 +104,8 @@ fun RangeLogNav() {
                             textAlign = TextAlign.Center,
                         )
                         due.forEach { s ->
-                            val over = s.roundsSinceCleaning - (s.gun.cleanInterval ?: 0)
                             Text(
-                                "${s.gun.name}\n${s.roundsSinceCleaning} rds since cleaning" +
-                                    if (over > 0) " ($over over)" else "",
+                                "${s.gun.name}\n${s.dueDetail}",
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center,

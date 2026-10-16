@@ -35,10 +35,7 @@ object CleaningReminders {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         for (s in due) {
-            val interval = s.gun.cleanInterval ?: 0
-            val over = s.roundsSinceCleaning - interval
-            val text = "${s.roundsSinceCleaning} rds since the last cleaning (every $interval)" +
-                if (over > 0) " - $over over" else ""
+            val text = s.dueDetail
             val notification = NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("Clean ${s.gun.name} now")
