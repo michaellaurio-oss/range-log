@@ -72,9 +72,10 @@ fun RangeLogNav() {
     }
     // After a delete, offer to take it back right away.
     LaunchedEffect(Unit) {
-        mainVm.repo.undoOffers.collect { label ->
-            val result = snackbar.showSnackbar(label, actionLabel = "Undo", duration = SnackbarDuration.Long)
-            if (result == SnackbarResult.ActionPerformed) mainVm.undo()
+        mainVm.repo.undoOffers.collect { offer ->
+            val result = snackbar.showSnackbar(offer.label, actionLabel = "Undo", duration = SnackbarDuration.Long)
+            // Undo exactly the step this bar names, even if other changes have happened since.
+            if (result == SnackbarResult.ActionPerformed) mainVm.undo(entryId = offer.entryId)
         }
     }
 
@@ -89,7 +90,7 @@ fun RangeLogNav() {
                         "after that. Undoing now would overwrite those newer edits."
                 )
             },
-            confirmButton = { TextButton(onClick = { mainVm.undo(force = true) }) { Text("Undo anyway") } },
+            confirmButton = { TextButton(onClick = { mainVm.undo(force = true, entryId = c.entryId) }) { Text("Undo anyway") } },
             dismissButton = { TextButton(onClick = mainVm::dismissUndoConflict) { Text("Cancel") } },
         )
     }

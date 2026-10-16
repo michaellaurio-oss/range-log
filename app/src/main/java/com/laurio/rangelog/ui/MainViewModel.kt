@@ -51,6 +51,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             repo.seedIfFirstLaunch()
             repo.sync.start()
         }
+        viewModelScope.launch { repo.notices.collect { _messages.tryEmit(it) } }
         // On open, say which guns are at or past their cleaning limit.
         viewModelScope.launch {
             val due = repo.gunSummaries.first { list -> list.isNotEmpty() }.filter { it.cleaningDue }
@@ -69,15 +70,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _undoConflict = MutableStateFlow<Repository.UndoOutcome.Conflict?>(null)
     val undoConflict: StateFlow<Repository.UndoOutcome.Conflict?> = _undoConflict
 
-    fun undo(force: Boolean = false) = viewModelScope.launch {
+    /** Undoes the newest step, or the step with [entryId] when an Undo offer names one. */
+    fun undo(force: Boolean = false, entryId: String? = null) = viewModelScope.launch {
         _undoConflict.value = null
-        val outcome = runCatching { repo.undoLast(force) }.getOrElse {
+        val outcome = runCatching { repo.undoLast(force, entryId) }.getOrElse {
             _messages.tryEmit("Undo failed: ${it.message}")
             return@launch
         }
         when (outcome) {
             Repository.UndoOutcome.NothingToUndo ->
-                _messages.tryEmit(if (repo.sync.status.value.email == null) "Sign in to use undo" else "Nothing to undo")
+                _messages.tryEmit(
+                    when {
+                        repo.sync.status.value.email == null -> "Sign in to use undo"
+                        entryId != null -> "That change was already undone"
+                        else -> "Nothing to undo"
+                    }
+                )
             is Repository.UndoOutcome.Conflict -> _undoConflict.value = outcome
             is Repository.UndoOutcome.Done -> _messages.tryEmit("Undone: ${outcome.label}")
         }
@@ -92,9 +100,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportTo(uri: Uri) = viewModelScope.launch {
         val result = runCatching {
-            val out = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
-                ?: error("Couldn't open the file")
-            repo.exportZip(out)
+            // Build the zip first; the chosen file is only opened (and emptied) once that has worked.
+            val (zip, pictures) = repo.exportZip()
+            try {
+                withContext(Dispatchers.IO) {
+                    val out = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                        ?: error("Couldn't open the file")
+                    out.use { o -> zip.inputStream().use { it.copyTo(o) } }
+                }
+            } finally {
+                zip.delete()
+            }
+            pictures
         }
         _messages.tryEmit(
             result.fold(
