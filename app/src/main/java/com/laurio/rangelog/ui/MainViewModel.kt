@@ -92,14 +92,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun exportTo(uri: Uri) = viewModelScope.launch {
         val result = runCatching {
-            val text = repo.exportJson()
-            withContext(Dispatchers.IO) {
-                getApplication<Application>().contentResolver.openOutputStream(uri, "wt")?.use {
-                    it.write(text.toByteArray())
-                } ?: error("Couldn't open the file")
-            }
+            val out = getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                ?: error("Couldn't open the file")
+            repo.exportZip(out)
         }
-        _messages.tryEmit(if (result.isSuccess) "Backup saved" else "Backup failed: ${result.exceptionOrNull()?.message}")
+        _messages.tryEmit(
+            result.fold(
+                onSuccess = { n -> "Backup saved with $n picture${if (n == 1) "" else "s"}" },
+                onFailure = { "Backup failed: ${it.message}" },
+            )
+        )
     }
 
     fun importPhotos(uris: List<Uri>) = viewModelScope.launch {
@@ -120,13 +122,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importFrom(uri: Uri) = viewModelScope.launch {
         val result = runCatching {
-            val text = withContext(Dispatchers.IO) {
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use {
-                    it.bufferedReader().readText()
-                } ?: error("Couldn't open the file")
-            }
-            repo.importJson(text)
+            val input = getApplication<Application>().contentResolver.openInputStream(uri)
+                ?: error("Couldn't open the file")
+            input.use { repo.importBackup(it) }
         }
-        _messages.tryEmit(if (result.isSuccess) "Backup restored" else "Restore failed: ${result.exceptionOrNull()?.message}")
+        _messages.tryEmit(
+            result.fold(
+                onSuccess = { n -> "Backup restored" + if (n > 0) " with $n picture${if (n == 1) "" else "s"}" else "" },
+                onFailure = { "Restore failed: ${it.message}" },
+            )
+        )
     }
 }

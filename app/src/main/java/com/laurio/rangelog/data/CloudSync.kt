@@ -523,7 +523,7 @@ class CloudSync(
     }
 
     /** Uploads local photos the cloud doesn't have yet and fetches ones that exist only in the cloud. */
-    private fun syncPhotos() {
+    fun syncPhotos() {
         scope.launch {
             val names = dao.allPhotos().map { it.fileName } + dao.allGuns().map { it.photo }.filter { it.isNotBlank() }
             names.distinct().forEach { name ->

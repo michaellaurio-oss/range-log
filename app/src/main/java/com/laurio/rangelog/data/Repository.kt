@@ -17,6 +17,11 @@ import com.laurio.rangelog.CleaningReminders
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.time.LocalDate
@@ -417,6 +422,68 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     // ---------------- Backup ----------------
 
     suspend fun exportJson(): String = json.encodeToString(Backup.serializer(), currentBackup())
+
+    /** Writes a zip with backup.json plus every picture the log refers to. Returns how many pictures went in. */
+    suspend fun exportZip(out: OutputStream): Int = withContext(Dispatchers.IO) {
+        val text = exportJson()
+        val names = photoNames()
+        var count = 0
+        ZipOutputStream(out.buffered()).use { zip ->
+            zip.putNextEntry(ZipEntry("backup.json"))
+            zip.write(text.toByteArray())
+            zip.closeEntry()
+            for (name in names) {
+                val file = photoFile(name)
+                if (!file.exists()) continue
+                zip.putNextEntry(ZipEntry("photos/$name"))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+                count++
+            }
+        }
+        count
+    }
+
+    /** Restores from a zip made by [exportZip] or an older plain JSON backup. Returns how many pictures came back. */
+    suspend fun importBackup(raw: InputStream): Int {
+        val input = raw.buffered()
+        input.mark(4)
+        val head = ByteArray(2)
+        val read = input.read(head)
+        input.reset()
+        if (read != 2 || head[0] != 'P'.code.toByte() || head[1] != 'K'.code.toByte()) {
+            importJson(input.reader().readText())
+            return 0
+        }
+        var text: String? = null
+        val written = mutableListOf<File>()
+        try {
+            withContext(Dispatchers.IO) {
+                ZipInputStream(input).use { zip ->
+                    while (true) {
+                        val entry = zip.nextEntry ?: break
+                        when {
+                            entry.isDirectory -> {}
+                            entry.name == "backup.json" -> text = zip.readBytes().toString(Charsets.UTF_8)
+                            entry.name.startsWith("photos/") -> {
+                                val file = photoFile(File(entry.name).name) // name only, never a path
+                                if (!file.exists()) {
+                                    file.outputStream().use { zip.copyTo(it) }
+                                    written += file
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            importJson(text ?: error("That zip has no backup.json in it"))
+        } catch (e: Exception) {
+            written.forEach { it.delete() }
+            throw e
+        }
+        sync.syncPhotos()
+        return written.size
+    }
 
     /** Replaces everything in the database with the contents of a backup file (can be undone). */
     suspend fun importJson(text: String) {

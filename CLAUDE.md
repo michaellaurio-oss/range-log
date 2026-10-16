@@ -173,12 +173,12 @@ records file. Data decisions already made:
   keyboards for counts, and nothing that needs a network connection.
 - Data syncs through his own Firebase project `range-log-88193` (Firestore + Google sign-in), added
   2026-10-03 at his request, so the log works on phone and desktop. Local Room DB stays the
-  offline copy. No analytics. Backup is still a user-chosen JSON file (Storage Access Framework). Plain wording; the phone UI and the web page should stay in step.
+  offline copy. No analytics. Backup is a user-chosen zip (Storage Access Framework): backup.json plus photos/<name> (Repository.exportZip/importBackup); restore also accepts old plain .json backups. Plain wording; the phone UI and the web page should stay in step.
 - Plain wording in the UI ("rds", "yds", "Cleaned it today").
 - Verify changes with a build (and on the phone when possible) before saying they work.
 
 ## Ideas he may ask for later (not built)
 
 Per-gun ammo type/brand, drill templates (e.g. his silhouette drill), accuracy scoring or
-group size, charts over time, photo annotation, including photos in backups (zip), home
+group size, charts over time, photo annotation, home
 screen widget, Google Drive auto-backup, time-based (months) cleaning reminders, arrows on the phone photo viewer, view mode for cleaning entries.
