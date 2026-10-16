@@ -62,6 +62,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val cleanReminder: StateFlow<List<GunSummary>?> = _cleanReminder
     fun dismissCleanReminder() { _cleanReminder.value = null }
 
+    val undoItems = repo.undo.items
+
+    fun undo() = viewModelScope.launch {
+        val label = runCatching { repo.undoLast() }.getOrElse {
+            _messages.tryEmit("Undo failed: ${it.message}")
+            return@launch
+        }
+        _messages.tryEmit(if (label == null) "Nothing to undo" else "Undone: $label")
+    }
+
     fun markCleanedToday(gunId: Long) = viewModelScope.launch {
         repo.logCleaning(gunId, LocalDate.now(), "")
         _messages.tryEmit("Cleaning logged")

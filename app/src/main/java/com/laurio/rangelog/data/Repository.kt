@@ -17,7 +17,9 @@ import com.laurio.rangelog.CleaningReminders
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
+import kotlinx.coroutines.flow.MutableSharedFlow
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -67,6 +69,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         ignoreUnknownKeys = true
     }
 
+    val undo = UndoLog(context, json)
+    /** Labels of destructive changes, so the UI can offer an Undo right away. */
+    val undoOffers = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
     val guns: Flow<List<Gun>> = dao.observeGuns()
     val sessions: Flow<List<SessionFull>> = dao.observeSessions()
     val cleanings: Flow<List<Cleaning>> = dao.observeCleanings()
@@ -95,55 +101,123 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     suspend fun getGun(id: Long): Gun? = dao.getGun(id)
 
-    suspend fun saveGun(gun: Gun): Long = sync.exclusive {
-        if (gun.id == 0L) {
-            val id = dao.insertGun(gun)
-            sync.pushGun(gun.copy(id = id))
-            id
-        } else {
-            // The editor builds a fresh Gun, so keep the stored cloud id.
-            val old = dao.getGun(gun.id)
-            val saved = gun.copy(syncId = old?.syncId ?: gun.syncId)
-            dao.updateGun(saved)
-            sync.pushGun(saved)
-            if (old != null && old.photo.isNotBlank() && old.photo != saved.photo) photoFile(old.photo).delete()
-            gun.id
+    suspend fun saveGun(gun: Gun): Long =
+        undoable(if (gun.id == 0L) "Added gun ${gun.name}" else "Edited gun ${gun.name}") {
+            sync.exclusive {
+                if (gun.id == 0L) {
+                    val id = dao.insertGun(gun)
+                    sync.pushGun(gun.copy(id = id))
+                    id
+                } else {
+                    // The editor builds a fresh Gun, so keep the stored cloud id.
+                    val saved = gun.copy(syncId = dao.getGun(gun.id)?.syncId ?: gun.syncId)
+                    dao.updateGun(saved)
+                    sync.pushGun(saved)
+                    gun.id
+                }
+            }
         }
-    }
 
     /** Deletes a gun only if it has never been logged in a session. Returns false otherwise. */
-    suspend fun deleteGunIfUnused(id: Long): Boolean = sync.exclusive {
-        if (dao.sessionCountForGun(id) > 0) return@exclusive false
-        val gun = dao.getGun(id)
-        val cleanings = dao.allCleanings().filter { it.gunId == id }
-        db.withTransaction {
-            dao.deleteCleaningsForGun(id)
-            dao.deleteGun(id)
+    suspend fun deleteGunIfUnused(id: Long): Boolean =
+        undoable("Deleted gun ${dao.getGun(id)?.name.orEmpty()}", offer = true, changed = { it }) {
+            sync.exclusive {
+                if (dao.sessionCountForGun(id) > 0) return@exclusive false
+                val gun = dao.getGun(id)
+                val cleanings = dao.allCleanings().filter { it.gunId == id }
+                db.withTransaction {
+                    dao.deleteCleaningsForGun(id)
+                    dao.deleteGun(id)
+                }
+                cleanings.forEach { sync.deleteCleaning(it.syncId) }
+                gun?.let { sync.deleteGun(it.syncId) }
+                true
+            }
         }
-        cleanings.forEach { sync.deleteCleaning(it.syncId) }
-        gun?.let { sync.deleteGun(it.syncId) }
-        gun?.photo?.takeIf { it.isNotBlank() }?.let { photoFile(it).delete() }
-        true
+
+    suspend fun logCleaning(gunId: Long, date: LocalDate, notes: String) = undoable("Logged a cleaning") {
+        sync.exclusive {
+            val cleaning = Cleaning(gunId = gunId, date = date.toEpochDay(), notes = notes.trim())
+            dao.insertCleaning(cleaning)
+            sync.pushCleaning(cleaning)
+        }
     }
 
-    suspend fun logCleaning(gunId: Long, date: LocalDate, notes: String) = sync.exclusive {
-        val cleaning = Cleaning(gunId = gunId, date = date.toEpochDay(), notes = notes.trim())
-        dao.insertCleaning(cleaning)
-        sync.pushCleaning(cleaning)
+    suspend fun deleteCleaning(cleaning: Cleaning) = undoable("Deleted a cleaning entry", offer = true) {
+        sync.exclusive {
+            dao.deleteCleaning(cleaning)
+            sync.deleteCleaning(cleaning.syncId)
+        }
     }
 
-    suspend fun deleteCleaning(cleaning: Cleaning) = sync.exclusive {
-        dao.deleteCleaning(cleaning)
-        sync.deleteCleaning(cleaning.syncId)
+    // ---------------- Undo ----------------
+
+    private suspend fun currentBackup(): Backup = db.withTransaction {
+        Backup(
+            guns = dao.allGuns(),
+            sessions = dao.allSessions(),
+            sessionGuns = dao.allSessionGuns(),
+            strings = dao.allStrings(),
+            cleanings = dao.allCleanings(),
+            photos = dao.allPhotos(),
+        )
+    }
+
+    private suspend fun photoNames(): Set<String> =
+        (dao.allPhotos().map { it.fileName } + dao.allGuns().map { it.photo }).filter { it.isNotBlank() }.toSet()
+
+    /**
+     * Runs a change to the log and remembers how things looked before it. Pictures the change
+     * removes are only deleted once no undo step could bring them back.
+     */
+    private suspend fun <T> undoable(
+        label: String,
+        offer: Boolean = false,
+        changed: (T) -> Boolean = { true },
+        block: suspend () -> T,
+    ): T {
+        val snapshot = currentBackup()
+        val before = photoNames()
+        val result = block()
+        if (changed(result)) {
+            undo.push(label, snapshot)
+            if (offer) undoOffers.tryEmit(label)
+        }
+        discardPhotos(before - photoNames())
+        return result
+    }
+
+    private val trashPrefs get() = context.getSharedPreferences("rangelog", Context.MODE_PRIVATE)
+
+    /** Marks pictures as unwanted, then deletes every unwanted picture that no undo step still needs. */
+    private suspend fun discardPhotos(removed: Set<String>) = withContext(Dispatchers.IO) {
+        val trash = trashPrefs.getStringSet("trashPhotos", emptySet())!! + removed
+        val keep = photoNames() + undo.referencedPhotos()
+        trash.filter { it !in keep }.forEach { photoFile(it).delete() }
+        trashPrefs.edit().putStringSet("trashPhotos", trash.filter { it in keep }.toSet()).apply()
+    }
+
+    /** Puts the log back as it was before the latest change. Returns what was undone, or null. */
+    suspend fun undoLast(): String? {
+        val entry = undo.pop() ?: return null
+        val before = photoNames()
+        replaceAll(entry.backup)
+        discardPhotos(before - photoNames())
+        return entry.label
     }
 
     // ---------------- Sessions ----------------
 
     suspend fun getSession(id: Long): SessionFull? = dao.getSession(id)
 
+    private fun dayLabel(epochDay: Long) = LocalDate.ofEpochDay(epochDay).format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+
     suspend fun saveSession(draft: SessionDraft): Long {
-        val id = sync.exclusive {
-            saveSessionRows(draft).also { sync.pushSession(it) }
+        val label = (if (draft.id == 0L) "Added session " else "Edited session ") + dayLabel(draft.date.toEpochDay())
+        val id = undoable(label) {
+            sync.exclusive {
+                saveSessionRows(draft).also { sync.pushSession(it) }
+            }
         }
         // Remind about every gun at or past its limit on each save, until it is cleaned.
         CleaningReminders.notifyDue(context, gunSummaries.first().filter { it.cleaningDue })
@@ -153,7 +227,6 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     private suspend fun saveSessionRows(draft: SessionDraft): Long {
         val existing = if (draft.id != 0L) dao.getSession(draft.id) else null
         val existingSyncId = existing?.session?.syncId
-        val oldPhotos = existing?.photos.orEmpty()
         val id = db.withTransaction {
             val session = Session(
                 id = draft.id,
@@ -191,24 +264,23 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             }
             sessionId
         }
-        val kept = draft.photos.map { it.fileName }.toSet()
-        oldPhotos.filter { it.fileName !in kept }.forEach { photoFile(it.fileName).delete() }
         return id
     }
 
     suspend fun deleteSession(id: Long) {
         val existing = dao.getSession(id)
-        val photos = existing?.photos.orEmpty()
-        sync.exclusive {
-            db.withTransaction {
-                dao.deleteStringsForSession(id)
-                dao.deleteSessionGuns(id)
-                dao.deleteSessionPhotos(id)
-                dao.deleteSessionRow(id)
+        val label = "Deleted session " + (existing?.let { dayLabel(it.session.date) } ?: "")
+        undoable(label, offer = true) {
+            sync.exclusive {
+                db.withTransaction {
+                    dao.deleteStringsForSession(id)
+                    dao.deleteSessionGuns(id)
+                    dao.deleteSessionPhotos(id)
+                    dao.deleteSessionRow(id)
+                }
+                existing?.let { sync.deleteSession(it.session.syncId) }
             }
-            existing?.let { sync.deleteSession(it.session.syncId) }
         }
-        photos.forEach { photoFile(it.fileName).delete() }
     }
 
     // ---------------- Photos ----------------
@@ -268,7 +340,10 @@ class Repository(private val context: Context, private val db: AppDatabase) {
      * Attaches picked images to sessions by file name: YYYYMMDD## (date + order), e.g.
      * 2024121001.JPG. Files already imported (same name on that session) are skipped.
      */
-    suspend fun importPhotosByName(uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
+    suspend fun importPhotosByName(uris: List<Uri>): PhotoImportResult =
+        undoable("Imported photos", changed = { it.added > 0 }) { importPhotosByNameNow(uris) }
+
+    private suspend fun importPhotosByNameNow(uris: List<Uri>): PhotoImportResult = withContext(Dispatchers.IO) {
         val pattern = Regex("""^(\d{4})(\d{2})(\d{2})(\d{2,})\.jpe?g$""", RegexOption.IGNORE_CASE)
         val sessions = dao.allSessions().sortedBy { it.id }
         var added = 0
@@ -326,24 +401,16 @@ class Repository(private val context: Context, private val db: AppDatabase) {
 
     // ---------------- Backup ----------------
 
-    suspend fun exportJson(): String {
-        val backup = db.withTransaction {
-            Backup(
-                guns = dao.allGuns(),
-                sessions = dao.allSessions(),
-                sessionGuns = dao.allSessionGuns(),
-                strings = dao.allStrings(),
-                cleanings = dao.allCleanings(),
-                photos = dao.allPhotos(),
-            )
-        }
-        return json.encodeToString(Backup.serializer(), backup)
-    }
+    suspend fun exportJson(): String = json.encodeToString(Backup.serializer(), currentBackup())
 
-    /** Replaces everything in the database with the contents of a backup. */
+    /** Replaces everything in the database with the contents of a backup file (can be undone). */
     suspend fun importJson(text: String) {
         val backup = json.decodeFromString(Backup.serializer(), text)
         require(backup.format == "rangelog-backup") { "Not a Range Log backup file" }
+        undoable("Restored a backup file") { replaceAll(backup) }
+    }
+
+    private suspend fun replaceAll(backup: Backup) {
         sync.afterRestore {
             db.withTransaction {
                 dao.clearPhotos()
@@ -370,7 +437,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
             val text = withContext(Dispatchers.IO) {
                 context.assets.open("seed.json").bufferedReader().use { it.readText() }
             }
-            importJson(text)
+            replaceAll(json.decodeFromString(Backup.serializer(), text))
         }
         prefs.edit().putBoolean("seeded", true).apply()
     }

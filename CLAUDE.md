@@ -62,6 +62,18 @@ Explain build and install steps plainly and prefer doing things over telling him
   open on click. Photos open in a viewer: swipe on the phone, on-image arrows and arrow keys on the web.
 - Guns have "Not my gun" (`notMine`) for rented/borrowed ones: no cleaning log, reminders or due state.
 
+## Undo (added 2026-10-16)
+
+- `data/UndoLog.kt` keeps the last 10 changes as full-DB snapshots (`filesDir/undo/*.json`), taken by
+  `Repository.undoable {}` before every save/delete/cleaning/photo-import/restore. `undoLast()` restores
+  the snapshot via `replaceAll` (phone becomes the truth, pushed to the cloud).
+- Photo files are never deleted directly: removed names go in a prefs "trash" set and are deleted only when
+  neither the DB nor any undo snapshot references them. New repository writes must go through `undoable`.
+- On the phone only its own changes are undoable (not ones arriving from the web page). Snackbar Undo after
+  deletes; Undo card on the Stats tab. The web page has its own separate undo (header button / Ctrl+Z): it
+  records each click's writes in `save`/`remove` (previous doc contents, last 10, kept in that browser's
+  localStorage) and writes them back; it never deletes photo docs, so pictures come back too. Gun pictures live in the same photos folder (`Gun.photo`, `cleanMonths`, DB v4).
+
 ## Stack
 
 Kotlin 2.0.21 · AGP 8.7.3 · Gradle 8.11.1 (wrapper included) · JDK 17 · compileSdk/targetSdk 35,

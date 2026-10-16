@@ -30,7 +30,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,6 +67,13 @@ fun RangeLogNav() {
 
     LaunchedEffect(Unit) {
         mainVm.messages.collect { snackbar.showSnackbar(it) }
+    }
+    // After a delete, offer to take it back right away.
+    LaunchedEffect(Unit) {
+        mainVm.repo.undoOffers.collect { label ->
+            val result = snackbar.showSnackbar(label, actionLabel = "Undo", duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed) mainVm.undo()
+        }
     }
 
     val reminder by mainVm.cleanReminder.collectAsState()

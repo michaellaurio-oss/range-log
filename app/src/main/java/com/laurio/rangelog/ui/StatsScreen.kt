@@ -49,6 +49,7 @@ fun StatsScreen(vm: MainViewModel) {
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val summaries by vm.gunSummaries.collectAsStateWithLifecycle()
     val sync by vm.syncStatus.collectAsStateWithLifecycle()
+    val undoItems by vm.undoItems.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? Activity
     var confirmImport by remember { mutableStateOf(false) }
 
@@ -98,6 +99,26 @@ fun StatsScreen(vm: MainViewModel) {
 
             BarSection("Rounds by year", byYear)
             BarSection("Rounds by gun", byGun)
+
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Undo", style = MaterialTheme.typography.titleMedium)
+                    if (undoItems.isEmpty()) {
+                        Text("Nothing to undo yet. Your last ${com.laurio.rangelog.data.UndoLog.MAX} changes are kept here, pictures included.",
+                            style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a") }
+                        undoItems.forEach { item ->
+                            Text(
+                                "${item.label} · " + java.time.Instant.ofEpochMilli(item.time)
+                                    .atZone(java.time.ZoneId.systemDefault()).format(fmt),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        OutlinedButton(onClick = vm::undo) { Text("Undo: ${undoItems.first().label}") }
+                    }
+                }
+            }
 
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

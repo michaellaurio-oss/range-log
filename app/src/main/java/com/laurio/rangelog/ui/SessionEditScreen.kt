@@ -396,7 +396,7 @@ fun SessionEditScreen(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             title = { Text("Delete this session?") },
-            text = { Text("This removes the session, its round counts and its photos. It can't be undone.") },
+            text = { Text("This removes the session, its round counts and its photos. You can undo this afterwards (Stats tab, or the Undo button that appears).") },
             confirmButton = {
                 TextButton(onClick = { confirmDelete = false; vm.delete(onDone) }) { Text("Delete") }
             },
