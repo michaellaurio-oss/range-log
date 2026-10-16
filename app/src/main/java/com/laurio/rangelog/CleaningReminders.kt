@@ -15,7 +15,8 @@ import com.laurio.rangelog.data.GunSummary
 
 /** Posts a "time to clean" notification for a gun. Silently does nothing if notifications are off. */
 object CleaningReminders {
-    private const val CHANNEL = "cleaning"
+    // New id: a channel's importance can't be raised after it was created, so "cleaning" is retired.
+    private const val CHANNEL = "cleaning_due"
 
     fun notifyDue(context: Context, due: List<GunSummary>) {
         if (due.isEmpty()) return
@@ -26,7 +27,7 @@ object CleaningReminders {
 
         if (Build.VERSION.SDK_INT >= 26) {
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-                NotificationChannel(CHANNEL, "Cleaning reminders", NotificationManager.IMPORTANCE_DEFAULT)
+                NotificationChannel(CHANNEL, "Cleaning reminders", NotificationManager.IMPORTANCE_HIGH)
             )
         }
         val open = PendingIntent.getActivity(
@@ -34,10 +35,15 @@ object CleaningReminders {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         for (s in due) {
+            val interval = s.gun.cleanInterval ?: 0
+            val over = s.roundsSinceCleaning - interval
+            val text = "${s.roundsSinceCleaning} rds since the last cleaning (every $interval)" +
+                if (over > 0) " - $over over" else ""
             val notification = NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("Time to clean ${s.gun.name}")
-                .setContentText("${s.roundsSinceCleaning} rds since the last cleaning (every ${s.gun.cleanInterval})")
+                .setContentTitle("Clean ${s.gun.name} now")
+                .setContentText(text)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .build()

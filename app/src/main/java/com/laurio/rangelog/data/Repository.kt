@@ -114,15 +114,11 @@ class Repository(private val context: Context, private val db: AppDatabase) {
     suspend fun getSession(id: Long): SessionFull? = dao.getSession(id)
 
     suspend fun saveSession(draft: SessionDraft): Long {
-        val dueBefore = gunSummaries.first().filter { it.cleaningDue }.map { it.gun.id }.toSet()
         val id = sync.exclusive {
             saveSessionRows(draft).also { sync.pushSession(it) }
         }
-        // Remind only about guns this save pushed over their limit, not ones already overdue.
-        CleaningReminders.notifyDue(
-            context,
-            gunSummaries.first().filter { it.cleaningDue && it.gun.id !in dueBefore },
-        )
+        // Remind about every gun at or past its limit on each save, until it is cleaned.
+        CleaningReminders.notifyDue(context, gunSummaries.first().filter { it.cleaningDue })
         return id
     }
 

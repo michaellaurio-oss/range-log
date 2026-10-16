@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -47,6 +48,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.seedIfFirstLaunch()
             repo.sync.start()
+        }
+        // On open, say which guns are at or past their cleaning limit.
+        viewModelScope.launch {
+            val due = repo.gunSummaries.first { list -> list.isNotEmpty() }.filter { it.cleaningDue }
+            if (due.isEmpty()) return@launch
+            _messages.subscriptionCount.first { it > 0 }
+            val names = due.joinToString(", ") { it.gun.name }
+            _messages.emit("Time to clean: $names")
         }
     }
 
