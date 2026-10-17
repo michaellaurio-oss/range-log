@@ -154,7 +154,7 @@ private fun GunCard(s: GunSummary, onClick: () -> Unit, onCleaned: (() -> Unit)?
                     style = MaterialTheme.typography.labelSmall,
                 )
             }
-            if (onCleaned != null && (s.roundsSinceCleaning > 0 || s.uncountedSinceCleaning > 0)) {
+            if (onCleaned != null && (due || s.roundsSinceCleaning > 0 || s.uncountedSinceCleaning > 0)) {
                 TextButton(onClick = onCleaned, contentPadding = PaddingValues(0.dp)) { Text("Cleaned it today") }
             }
             }
