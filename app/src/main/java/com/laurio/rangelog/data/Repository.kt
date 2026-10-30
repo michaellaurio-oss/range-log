@@ -560,8 +560,8 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         require(backup.format == "rangelog-backup") { "Not a Range Log backup file" }
         undoable(
             "Restored a backup file",
-            notRecordedNotice = "This restore can't be undone (you're signed out, or it changed too many items). " +
-                "Keep your backup file.",
+            notRecordedNotice = if (!CloudSync.ENABLED) "Restore done. It can't be undone, so keep your backup file." else
+                "This restore can't be undone (you're signed out, or it changed too many items). Keep your backup file.",
         ) { replaceAll(backup) }
     }
 
@@ -584,11 +584,12 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         }
     }
 
-    /** On first launch, load the history that came with the app. */
+    /** On first launch, load the history that came with the app (personal build only: share has no seed.json). */
     suspend fun seedIfFirstLaunch() {
         val prefs = context.getSharedPreferences("rangelog", Context.MODE_PRIVATE)
         if (prefs.getBoolean("seeded", false)) return
-        if (dao.allGuns().isEmpty() && dao.allSessions().isEmpty()) {
+        val hasSeed = context.assets.list("").orEmpty().contains("seed.json")
+        if (hasSeed && dao.allGuns().isEmpty() && dao.allSessions().isEmpty()) {
             val text = withContext(Dispatchers.IO) {
                 context.assets.open("seed.json").bufferedReader().use { it.readText() }
             }

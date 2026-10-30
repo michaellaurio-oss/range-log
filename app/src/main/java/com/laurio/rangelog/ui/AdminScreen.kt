@@ -65,59 +65,62 @@ fun AdminScreen(vm: MainViewModel) {
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Undo", style = MaterialTheme.typography.titleMedium)
-                    if (undoItems.isEmpty()) {
-                        Text(
-                            if (sync.email == null) "Sign in with Google below to use undo. It's shared with the web page."
-                            else "Nothing to undo yet. The last ${com.laurio.rangelog.data.CloudSync.UNDO_MAX} changes " +
-                                "from this phone and the web page are kept here, pictures included.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    } else {
-                        val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a") }
-                        val undoable by vm.undoableIds.collectAsStateWithLifecycle()
-                        undoItems.forEach { item ->
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "${item.label} (${item.device}) · " + java.time.Instant.ofEpochMilli(item.time)
-                                        .atZone(java.time.ZoneId.systemDefault()).format(fmt),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                // A step whose items were edited again since can't be undone safely.
-                                if (item.id in undoable) {
-                                    OutlinedButton(onClick = { vm.undo(entryId = item.id) }) { Text("Undo") }
-                                } else {
-                                    Text("edited since", style = MaterialTheme.typography.bodySmall)
+            // Undo and sync need a Google sign-in, which only the personal build has.
+            if (com.laurio.rangelog.data.CloudSync.ENABLED) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Undo", style = MaterialTheme.typography.titleMedium)
+                        if (undoItems.isEmpty()) {
+                            Text(
+                                if (sync.email == null) "Sign in with Google below to use undo. It's shared with the web page."
+                                else "Nothing to undo yet. The last ${com.laurio.rangelog.data.CloudSync.UNDO_MAX} changes " +
+                                    "from this phone and the web page are kept here, pictures included.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            val fmt = remember { java.time.format.DateTimeFormatter.ofPattern("MMM d, h:mm a") }
+                            val undoable by vm.undoableIds.collectAsStateWithLifecycle()
+                            undoItems.forEach { item ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "${item.label} (${item.device}) · " + java.time.Instant.ofEpochMilli(item.time)
+                                            .atZone(java.time.ZoneId.systemDefault()).format(fmt),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    // A step whose items were edited again since can't be undone safely.
+                                    if (item.id in undoable) {
+                                        OutlinedButton(onClick = { vm.undo(entryId = item.id) }) { Text("Undo") }
+                                    } else {
+                                        Text("edited since", style = MaterialTheme.typography.bodySmall)
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Sync", style = MaterialTheme.typography.titleMedium)
-                    if (sync.email == null) {
-                        Text(
-                            "Sign in with Google to keep this log in step with your desktop. It works offline " +
-                                "and catches up when you're connected. Photos stay on this phone.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        OutlinedButton(onClick = { activity?.let(vm::signIn) }) { Text("Sign in with Google") }
-                    } else {
-                        Text("${sync.email}", style = MaterialTheme.typography.bodyMedium)
-                        Text(sync.text, style = MaterialTheme.typography.bodySmall)
-                        if (sync.needsChoice) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = vm::useThisPhone) { Text("Keep this phone's data") }
-                                OutlinedButton(onClick = vm::useCloud) { Text("Use cloud data") }
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Sync", style = MaterialTheme.typography.titleMedium)
+                        if (sync.email == null) {
+                            Text(
+                                "Sign in with Google to keep this log in step with your desktop. It works offline " +
+                                    "and catches up when you're connected. Photos stay on this phone.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            OutlinedButton(onClick = { activity?.let(vm::signIn) }) { Text("Sign in with Google") }
+                        } else {
+                            Text("${sync.email}", style = MaterialTheme.typography.bodyMedium)
+                            Text(sync.text, style = MaterialTheme.typography.bodySmall)
+                            if (sync.needsChoice) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(onClick = vm::useThisPhone) { Text("Keep this phone's data") }
+                                    OutlinedButton(onClick = vm::useCloud) { Text("Use cloud data") }
+                                }
                             }
+                            OutlinedButton(onClick = vm::signOut) { Text("Sign out") }
                         }
-                        OutlinedButton(onClick = vm::signOut) { Text("Sign out") }
                     }
                 }
             }

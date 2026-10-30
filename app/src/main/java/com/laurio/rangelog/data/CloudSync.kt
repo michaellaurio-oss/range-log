@@ -26,6 +26,7 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.QuerySnapshot
 import java.util.UUID
 import com.google.firebase.firestore.Source
+import com.laurio.rangelog.BuildConfig
 import com.laurio.rangelog.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,8 +70,10 @@ class CloudSync(
     private val dropPhotos: (Set<String>) -> Unit,
 ) {
     private val dao = db.dao()
-    private val auth = FirebaseAuth.getInstance()
-    private val fs = FirebaseFirestore.getInstance()
+    // Lazy, so the share build (no Firebase at all) never touches them: with CLOUD_SYNC off,
+    // nobody signs in, uid stays null and every push/undo below quietly does nothing.
+    private val auth by lazy { FirebaseAuth.getInstance() }
+    private val fs by lazy { FirebaseFirestore.getInstance() }
     private val prefs = context.getSharedPreferences("rangelog", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mutex = Mutex()
@@ -88,7 +91,7 @@ class CloudSync(
     private val deferredCleanings = mutableMapOf<String, Map<String, Any?>>()
     private var started = false
 
-    private val uid: String? get() = auth.currentUser?.uid
+    private val uid: String? get() = if (ENABLED) auth.currentUser?.uid else null
 
     private fun ref(collection: String, id: String): DocumentReference? =
         uid?.let { fs.collection("users").document(it).collection(collection).document(id) }
@@ -98,7 +101,7 @@ class CloudSync(
     // ---------------- Sign-in ----------------
 
     fun start() {
-        if (started) return
+        if (started || !ENABLED) return
         started = true
         auth.addAuthStateListener { a ->
             val user = a.currentUser
@@ -112,6 +115,7 @@ class CloudSync(
     }
 
     suspend fun signIn(activity: Activity) {
+        check(ENABLED) { "Cloud sync isn't part of this version of the app" }
         val option = GetSignInWithGoogleOption.Builder(context.getString(R.string.default_web_client_id)).build()
         val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
         val credential = CredentialManager.create(activity).getCredential(activity, request).credential
@@ -124,6 +128,7 @@ class CloudSync(
     }
 
     fun signOut() {
+        if (!ENABLED) return
         detach()
         auth.signOut()
     }
@@ -586,6 +591,8 @@ class CloudSync(
     }
 
     companion object {
+        /** False in the share build: no sign-in, sync or undo; the log lives only on the phone. */
+        val ENABLED = BuildConfig.CLOUD_SYNC
         const val UNDO_MAX = 10
         private val COLLECTIONS = listOf("guns", "sessions", "cleanings")
 
