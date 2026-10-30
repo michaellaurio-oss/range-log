@@ -47,7 +47,8 @@ Explain build and install steps plainly and prefer doing things over telling him
   `CloudSync.ENABLED` (or live behind `uid`).
 - Signing: personal uses the debug key (all build types). shareRelease uses the share release key when
   `keystore.properties` (git-ignored; storeFile/storePassword/keyAlias/keyPassword) exists, else debug.
-  The key (`share-release.jks`) and its properties file are kept on his PC, outside git. Updates must be
+  The key lives on his PC in `share-signing-key/` (git-ignored): `share-release.jks`, a filled-in
+  `keystore.properties` (copy it to the project root to sign shareRelease locally) and the base64 text for the secret. Updates must be
   signed with that same key.
 - `.github/workflows/build-share-apk.yml` builds `assembleShareRelease` on every push and uploads the APK as
   an artifact; a `share-v*` tag also makes a GitHub Release with the APK. Signing secrets:
