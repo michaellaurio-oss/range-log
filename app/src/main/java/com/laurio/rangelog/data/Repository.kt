@@ -560,7 +560,7 @@ class Repository(private val context: Context, private val db: AppDatabase) {
         require(backup.format == "rangelog-backup") { "Not a Range Log backup file" }
         undoable(
             "Restored a backup file",
-            notRecordedNotice = if (!CloudSync.ENABLED) "Restore done. It can't be undone, so keep your backup file." else
+            notRecordedNotice = if (!CloudSync.ENABLED) "A restore can't be undone, so keep your backup file." else
                 "This restore can't be undone (you're signed out, or it changed too many items). Keep your backup file.",
         ) { replaceAll(backup) }
     }

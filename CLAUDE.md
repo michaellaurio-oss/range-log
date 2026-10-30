@@ -51,8 +51,12 @@ Explain build and install steps plainly and prefer doing things over telling him
   The key lives on his PC in `share-signing-key/` (git-ignored): `share-release.jks`, a filled-in
   `keystore.properties` (copy it to the project root to sign shareRelease locally) and the base64 text for the secret. Updates must be
   signed with that same key.
-- `.github/workflows/build-share-apk.yml` builds `assembleShareRelease` on every push and uploads the APK as
-  an artifact; a `share-v*` tag also makes a GitHub Release with the APK. Signing secrets:
+- Versions: `versionCode` = git commit count (`git rev-list --count HEAD`, read in `app/build.gradle.kts`;
+  falls back to 1 without git), `versionName` = `1.0.<count>` (+ `-share`). Same on his PC and GitHub (checkout
+  uses `fetch-depth: 0`), so each build installs over the last. Shown at the bottom of the Admin tab.
+- `.github/workflows/build-share-apk.yml` builds `assembleShareRelease` on pushes that touch the app (paths filter)
+  and uploads `RangeLogger-1.0.<count>.apk` as an artifact; a `share-v*` tag also runs a separate `release` job
+  (the only one with `contents: write`) that makes a GitHub Release with the APK. Signing secrets:
   SHARE_KEYSTORE_BASE64, SHARE_STORE_PASSWORD, SHARE_KEY_ALIAS, SHARE_KEY_PASSWORD (without them: debug key + warning).
 
 ## Cloud sync (added 2026-10-03)
@@ -181,7 +185,7 @@ firestore.rules                 Firestore security rules (own data only)
 
 `seed.json` is loaded once on first launch (SharedPreferences flag `seeded`), and only if
 the DB is empty. It uses the same format as Export/Restore. To change the preloaded
-history, edit `tools/make_seed.py` and run `python tools/make_seed.py`. It prints per-gun
+history, edit `tools/make_seed.py` and run `python tools/make_seed.py` (writes `app/src/personal/assets/seed.json`). It prints per-gun
 totals and rounds since cleaning so you can check them against the cleaning table in the
 records file. Data decisions already made:
 

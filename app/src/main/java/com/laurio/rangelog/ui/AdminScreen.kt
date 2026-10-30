@@ -153,6 +153,14 @@ fun AdminScreen(vm: MainViewModel) {
                     }
                 }
             }
+
+            Text(
+                "${androidx.compose.ui.res.stringResource(com.laurio.rangelog.R.string.app_name)} " +
+                    "version ${com.laurio.rangelog.BuildConfig.VERSION_NAME}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
         }
     }
 
