@@ -62,7 +62,7 @@ jobs:
         run: |
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
           "$APKSIGNER" verify --print-certs out/*.apk | grep -E 'DN|SHA-256'
-          echo "Share key SHA-256 should be A8:5C:57:BA:54:84:8B:89... (a85c57ba54848b89...)"
+          echo "Compare with share-signing-key/fingerprint.txt on the PC (same digest, written with colons there)."
 
       - uses: actions/upload-artifact@v5
         with:
