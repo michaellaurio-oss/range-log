@@ -1,5 +1,14 @@
 import java.util.Properties
 
+// Build number = number of commits, the same on this PC and on GitHub (which checks out the full history),
+// so every new build is a higher version and installs over the previous one. Falls back to 1 without git.
+val buildNumber: Int = runCatching {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1)
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,8 +26,8 @@ android {
         applicationId = "com.laurio.rangelog"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = buildNumber
+        versionName = "1.0.$buildNumber"
     }
 
     // Release key for the share build. keystore.properties (git-ignored) lists storeFile, storePassword,
