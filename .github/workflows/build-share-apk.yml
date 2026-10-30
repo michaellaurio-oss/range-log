@@ -56,6 +56,12 @@ jobs:
           cp app/build/outputs/apk/share/release/app-share-release.apk "out/RangeLog-share-$VERSION-${GITHUB_SHA::7}.apk"
           ls -l out
 
+      - name: Show who signed it
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$APKSIGNER" verify --print-certs out/*.apk | grep -E 'DN|SHA-256'
+          echo "Share key SHA-256 should be A8:5C:57:BA:54:84:8B:89... (a85c57ba54848b89...)"
+
       - uses: actions/upload-artifact@v5
         with:
           name: RangeLog-share-apk
