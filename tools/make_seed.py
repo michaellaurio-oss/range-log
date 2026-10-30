@@ -1,4 +1,7 @@
-"""Builds app/src/main/assets/seed.json from Michael's shooting records."""
+"""Builds app/src/personal/assets/seed.json from Michael's shooting records.
+
+It goes in the personal source set only, so the share build (for friends) never ships this history.
+"""
 import json
 from datetime import date
 
@@ -146,7 +149,7 @@ for j, (gun, dt) in enumerate(cleanings, start=1):
     out["cleanings"].append({"id": j, "gunId": G[gun], "date": d(dt), "notes": ""})
 
 import os
-path = os.path.join(os.path.dirname(__file__), "..", "app", "src", "main", "assets", "seed.json")
+path = os.path.join(os.path.dirname(__file__), "..", "app", "src", "personal", "assets", "seed.json")
 json.dump(out, open(path, "w"), indent=2, ensure_ascii=False)
 tot = sum(e["rounds"] or 0 for e in out["sessionGuns"])
 print(len(out["sessions"]), "sessions,", len(out["sessionGuns"]), "gun entries,", tot, "rounds")

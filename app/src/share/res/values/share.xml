@@ -1,0 +1,8 @@
+<resources>
+    <!-- Share build: its own name so it's easy to tell apart from the personal "Range Log". -->
+    <string name="app_name">Range Logger</string>
+    <!-- The personal build gets this from google-services.json. The share build never signs in. -->
+    <string name="default_web_client_id" translatable="false">unused</string>
+    <!-- Share build icon: navy background instead of the personal app's dark green. -->
+    <color name="ic_launcher_background">#1E3557</color>
+</resources>

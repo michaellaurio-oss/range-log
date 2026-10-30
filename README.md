@@ -34,8 +34,21 @@ April 2024 – September 2026) and the cleaning dates from the cleaning table.
    the green **Run ▶** button. The app installs and opens.
 
 To get an APK file instead: **Build → Build App Bundle(s) / APK(s) → Build APK(s)**.
-The file lands in `app/build/outputs/apk/debug/`. Copy it to the phone and open it
+The file lands in `app/build/outputs/apk/personal/debug/`. Copy it to the phone and open it
 there. You'll need to allow installing from that source.
+
+## Two versions: personal and share
+
+The project builds two apps from the same code (Android "build flavors"):
+
+- **personal**: your app, with your preloaded history, Google sign-in, cloud sync and undo.
+- **share** (shows as **Range Logger**, navy crosshair icon): for friends (Android only). Starts empty, keeps everything on the phone, no sign-in.
+  It installs as a separate app (`com.laurio.rangelog.share`), so it can sit next to yours.
+
+Pick the version in Android Studio under **Build Variants** (e.g. `personalDebug`, `shareRelease`).
+GitHub builds the share APK on every push: open the **Actions** tab, pick the latest
+"Build share APK" run and download it under **Artifacts**. Pushing a tag like `share-v1.0`
+also publishes it as a Release with the APK attached, which is an easy link to send people.
 
 If Android Studio offers to upgrade the Android Gradle Plugin or libraries, it's
 fine to accept.
