@@ -34,14 +34,15 @@ Explain build and install steps plainly and prefer doing things over telling him
 
 - One code base, two apps (`productFlavors`, dimension `edition`). **personal** = his app, unchanged
   (`com.laurio.rangelog`, seed history, Firebase sync, undo). **share** = Android-only build for friends
-  (`com.laurio.rangelog.share`, `-share` version suffix): starts empty, no Firebase, data only on the phone,
+  (`com.laurio.rangelog.share`, `-share` version suffix, named "Range Logger" with a navy crosshair icon
+  vs. the personal green target): starts empty, no Firebase, data only on the phone,
   zip backup/restore still works. iPhone support was considered (phone web app) and parked.
 - The switch is `BuildConfig.CLOUD_SYNC` (`CloudSync.ENABLED`). Off: `auth`/`fs` are never touched (lazy),
   `uid` is always null so pushes/undo no-op, `start`/`signOut` return, `signIn` throws. Admin hides the
   Undo and Sync cards. Shared code stays in `src/main`; flavor-only bits:
   `src/personal/assets/seed.json` (seeding skips when the asset is absent),
   `src/share/AndroidManifest.xml` (removes `FirebaseInitProvider`), `src/share/res/values/share.xml`
-  (placeholder `default_web_client_id`). The google-services task is disabled for share variants, so
+  (app name, icon background color, placeholder `default_web_client_id`), `src/share/res/drawable/ic_launcher_foreground.xml`. The google-services task is disabled for share variants, so
   share builds need no `google-services.json` (which is how GitHub can build it).
 - New features go in `src/main` and land in both apps; anything that needs Firebase must check
   `CloudSync.ENABLED` (or live behind `uid`).

@@ -42,7 +42,7 @@ there. You'll need to allow installing from that source.
 The project builds two apps from the same code (Android "build flavors"):
 
 - **personal**: your app, with your preloaded history, Google sign-in, cloud sync and undo.
-- **share**: for friends (Android only). Starts empty, keeps everything on the phone, no sign-in.
+- **share** (shows as **Range Logger**, navy crosshair icon): for friends (Android only). Starts empty, keeps everything on the phone, no sign-in.
   It installs as a separate app (`com.laurio.rangelog.share`), so it can sit next to yours.
 
 Pick the version in Android Studio under **Build Variants** (e.g. `personalDebug`, `shareRelease`).
