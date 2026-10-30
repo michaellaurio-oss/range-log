@@ -13,3 +13,4 @@ phone-db-backup/
 keystore.properties
 *.jks
 share-signing-key/
+build-and-install.log
