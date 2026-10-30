@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,11 +21,44 @@ android {
         versionName = "1.0"
     }
 
+    // Release key for the share build. keystore.properties (git-ignored) lists storeFile, storePassword,
+    // keyAlias and keyPassword; GitHub Actions writes it from repo secrets. Without it, release builds
+    // fall back to the debug key, which is fine for testing but can't update a properly signed install.
+    val shareKeyProps = rootProject.file("keystore.properties").takeIf { it.exists() }
+        ?.let { f -> Properties().apply { f.inputStream().use { load(it) } } }
+    signingConfigs {
+        if (shareKeyProps != null) create("share") {
+            storeFile = rootProject.file(shareKeyProps.getProperty("storeFile"))
+            storePassword = shareKeyProps.getProperty("storePassword")
+            keyAlias = shareKeyProps.getProperty("keyAlias")
+            keyPassword = shareKeyProps.getProperty("keyPassword")
+        }
+    }
+
+    // One code base, two apps:
+    //  personal = Michael's own app: preloaded history, Google sign-in, cloud sync and undo.
+    //  share    = for friends: starts empty, everything stays on the phone, no Firebase.
+    // Shared code is in src/main; each flavor's extras are in src/personal and src/share.
+    flavorDimensions += "edition"
+    productFlavors {
+        create("personal") {
+            dimension = "edition"
+            buildConfigField("boolean", "CLOUD_SYNC", "true")
+            signingConfig = signingConfigs.getByName("debug")
+        }
+        create("share") {
+            dimension = "edition"
+            applicationIdSuffix = ".share" // com.laurio.rangelog.share, installs next to the personal app
+            versionNameSuffix = "-share"
+            buildConfigField("boolean", "CLOUD_SYNC", "false")
+            signingConfig = signingConfigs.findByName("share") ?: signingConfigs.getByName("debug")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            // Lets you install a release build without setting up your own signing key.
-            signingConfig = signingConfigs.getByName("debug")
+            // Signing comes from the flavor above (personal: debug key; share: release key when present).
         }
     }
     compileOptions {
@@ -35,7 +70,14 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
+}
+
+// google-services.json only knows the personal app, and the share app doesn't use Firebase,
+// so skip the step that reads it for share builds (they also build without the file, e.g. on GitHub).
+tasks.configureEach {
+    if (name.startsWith("processShare") && name.endsWith("GoogleServices")) enabled = false
 }
 
 dependencies {

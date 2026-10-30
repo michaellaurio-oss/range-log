@@ -7,11 +7,11 @@ Explain build and install steps plainly and prefer doing things over telling him
 
 ## Current status (read first)
 
-- **Builds cleanly** (`assembleDebug`). Installed on Michael's phone (Samsung, adb id `R5CY20N34VZ`)
+- **Builds cleanly** (`assemblePersonalDebug`; see Flavors below). Installed on Michael's phone (Samsung, adb id `R5CY20N34VZ`)
   and in daily trial use as of 2026-10-03. Cloud sync works end to end: phone signs in with Google
   and the web page at https://the-laurios.com/range-app/ shows the same sessions. Photo sync (below)
   was built right after and is not yet confirmed by him.
-- Install/update: `adb install -r app/build/outputs/apk/debug/app-debug.apk` (keeps data; Room
+- Install/update: `adb install -r app/build/outputs/apk/personal/debug/app-personal-debug.apk` (keeps data; Room
   migrations run). Before risky changes copy the DB off the phone with
   `adb exec-out run-as com.laurio.rangelog cat databases/rangelog.db`. A copy from 2026-10-03 is in
   `phone-db-backup/` (git-ignored).
@@ -19,7 +19,7 @@ Explain build and install steps plainly and prefer doing things over telling him
   `D:\Users\micha\Android\jdk-17`, SDK at `D:\Users\micha\Android\sdk` (platform 35,
   build-tools 35.0.0, platform-tools/adb). `local.properties` points at the SDK. Set
   `JAVA_HOME` before running Gradle, e.g. in PowerShell:
-  `$env:JAVA_HOME='D:\Users\micha\Android\jdk-17'; .\gradlew.bat assembleDebug`.
+  `$env:JAVA_HOME='D:\Users\micha\Android\jdk-17'; .\gradlew.bat assemblePersonalDebug`.
   Python is not installed (needed only for `tools/make_seed.py`).
 - Emulator: AVD `RangeLogPhone` (Pixel 7, Android 15 google_apis x86_64, WHPX accel,
   PC keyboard on, emulated back camera). Start it with
@@ -29,6 +29,29 @@ Explain build and install steps plainly and prefer doing things over telling him
   (checked Sessions and Guns tabs by screenshot on 2026-09-29).
 - If you bump versions, keep them consistent: Kotlin, the compose compiler plugin and
   KSP must match (`2.0.21` / `2.0.21-1.0.28`).
+
+## Flavors: personal and share (added 2026-10-30)
+
+- One code base, two apps (`productFlavors`, dimension `edition`). **personal** = his app, unchanged
+  (`com.laurio.rangelog`, seed history, Firebase sync, undo). **share** = Android-only build for friends
+  (`com.laurio.rangelog.share`, `-share` version suffix): starts empty, no Firebase, data only on the phone,
+  zip backup/restore still works. iPhone support was considered (phone web app) and parked.
+- The switch is `BuildConfig.CLOUD_SYNC` (`CloudSync.ENABLED`). Off: `auth`/`fs` are never touched (lazy),
+  `uid` is always null so pushes/undo no-op, `start`/`signOut` return, `signIn` throws. Admin hides the
+  Undo and Sync cards. Shared code stays in `src/main`; flavor-only bits:
+  `src/personal/assets/seed.json` (seeding skips when the asset is absent),
+  `src/share/AndroidManifest.xml` (removes `FirebaseInitProvider`), `src/share/res/values/share.xml`
+  (placeholder `default_web_client_id`). The google-services task is disabled for share variants, so
+  share builds need no `google-services.json` (which is how GitHub can build it).
+- New features go in `src/main` and land in both apps; anything that needs Firebase must check
+  `CloudSync.ENABLED` (or live behind `uid`).
+- Signing: personal uses the debug key (all build types). shareRelease uses the share release key when
+  `keystore.properties` (git-ignored; storeFile/storePassword/keyAlias/keyPassword) exists, else debug.
+  The key (`share-release.jks`) and its properties file are kept on his PC, outside git. Updates must be
+  signed with that same key.
+- `.github/workflows/build-share-apk.yml` builds `assembleShareRelease` on every push and uploads the APK as
+  an artifact; a `share-v*` tag also makes a GitHub Release with the APK. Signing secrets:
+  SHARE_KEYSTORE_BASE64, SHARE_STORE_PASSWORD, SHARE_KEY_ALIAS, SHARE_KEY_PASSWORD (without them: debug key + warning).
 
 ## Cloud sync (added 2026-10-03)
 
@@ -119,7 +142,8 @@ app/src/main/java/com/laurio/rangelog/
                         sessions share a date the lowest id gets them. Tested in the emulator on
                         2026-10-02 with 9 photos from `photos/`.)
     Theme.kt, Format.kt date/number helpers
-app/src/main/assets/seed.json   preloaded history (Backup JSON format)
+app/src/personal/assets/seed.json   preloaded history (Backup JSON format), personal build only
+app/src/share/                  share-build overrides (manifest, placeholder string)
 tools/make_seed.py              regenerates seed.json from hand-transcribed records
 web/index.html                 desktop web page (Firebase JS), deployed to the-laurios.com/range-app
 firestore.rules                 Firestore security rules (own data only)

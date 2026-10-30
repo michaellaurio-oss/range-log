@@ -1,0 +1,4 @@
+<resources>
+    <!-- The personal build gets this from google-services.json. The share build never signs in. -->
+    <string name="default_web_client_id" translatable="false">unused</string>
+</resources>

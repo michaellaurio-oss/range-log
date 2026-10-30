@@ -8,3 +8,7 @@ captures/
 .kotlin/
 ~$*
 phone-db-backup/
+
+# Release signing for the share build (never commit these)
+keystore.properties
+*.jks
