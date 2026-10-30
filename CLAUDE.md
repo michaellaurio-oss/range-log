@@ -50,7 +50,12 @@ Explain build and install steps plainly and prefer doing things over telling him
   `keystore.properties` (git-ignored; storeFile/storePassword/keyAlias/keyPassword) exists, else debug.
   The key lives on his PC in `share-signing-key/` (git-ignored): `share-release.jks`, a filled-in
   `keystore.properties` (copy it to the project root to sign shareRelease locally) and the base64 text for the secret. Updates must be
-  signed with that same key.
+  signed with that same key. The key was replaced on 2026-10-30 (before any friend installed it) because the first
+  one passed through a chat; `make-new-share-key.ps1` / `Make new share key.bat` (untracked, project root) made the
+  new one on his PC without showing the password. Current SHA-256 is in `share-signing-key/fingerprint.txt`
+  (11:91:54:39...); the old key is in `share-signing-key/old-20261030-1406/`.
+- `Build and install both.bat` (untracked, project root): pulls `main`, builds both flavors, backs up the phone DB,
+  installs both via adb; progress in the window, details in `build-and-install.log`.
 - Versions: `versionCode` = git commit count (`git rev-list --count HEAD`, read in `app/build.gradle.kts`;
   falls back to 1 without git), `versionName` = `1.0.<count>` (+ `-share`). Same on his PC and GitHub (checkout
   uses `fetch-depth: 0`), so each build installs over the last. Shown at the bottom of the Admin tab.
