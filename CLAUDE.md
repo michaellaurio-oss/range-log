@@ -92,7 +92,9 @@ Explain build and install steps plainly and prefer doing things over telling him
   The page signs in with Firebase **Anonymous** auth (must be enabled in the console) and writes
   `shares/{code}/viewers/{anonUid}`; rules (`canView`) allow reading `guns|sessions` and `get` on single `photos`
   only while `share == true` and that viewer exists under the *current* `shareKey`. "New link" / turning sharing on
-  makes a new code and deletes the old shares doc, so every older link stops. Phone app has no toggle yet.
+  makes a new code and deletes the old shares doc, so every older link stops. Phone: Admin tab "Friends link"
+  card (personal build, signed in): turn on, Copy link, Send…, New link, Turn off (`CloudSync.newShareLink/stopSharing`,
+  `ShareState` from a listener on `users/{uid}`; URL base `CloudSync.FRIENDS_PAGE`). Web Admin also edits the name.
 - Not synced: photo captions are stored but never edited anywhere; reminders are local to the phone.
 
 ## Behavior decisions (2026-10-03)

@@ -24,6 +24,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.QuerySnapshot
+import com.google.firebase.firestore.SetOptions
 import java.util.UUID
 import com.google.firebase.firestore.Source
 import com.laurio.rangelog.BuildConfig
@@ -44,6 +45,14 @@ data class UndoOp(val c: String, val id: String, val before: Map<String, Any?>?,
 
 /** One undoable step, shared by every device through users/{uid}/undo/{id}. */
 data class UndoEntry(val id: String, val label: String, val time: Long, val device: String, val ops: List<UndoOp>)
+
+/**
+ * The view-only friends link (web/friends.html?k=<key>), mirrored from users/{uid}.
+ * [name] is null until a name has been chosen; "" means "show no name".
+ */
+data class ShareState(val on: Boolean = false, val key: String = "", val name: String? = null) {
+    val url: String get() = if (on && key.isNotEmpty()) CloudSync.FRIENDS_PAGE + key else ""
+}
 
 data class SyncStatus(
     val email: String? = null,
@@ -84,6 +93,9 @@ class CloudSync(
     private val _undo = MutableStateFlow<List<UndoEntry>>(emptyList())
     /** The last [UNDO_MAX] changes from any device, newest first. */
     val undoEntries: StateFlow<List<UndoEntry>> = _undo.asStateFlow()
+
+    private val _share = MutableStateFlow(ShareState())
+    val share: StateFlow<ShareState> = _share.asStateFlow()
 
     private var registrations: List<ListenerRegistration> = emptyList()
     private val health = mutableMapOf<String, Boolean>() // collection -> in step with the server
@@ -138,6 +150,7 @@ class CloudSync(
         registrations = emptyList()
         health.clear()
         _undo.value = emptyList()
+        _share.value = ShareState()
     }
 
     // ---------------- Starting up after sign-in ----------------
@@ -207,10 +220,43 @@ class CloudSync(
         syncPhotos()
     }
 
+    // ---------------- Friends link ----------------
+    // Same scheme as the web page's Admin tab: shares/{key} = {uid, name} is what the friends page
+    // looks up, and users/{uid}.shareKey says which key is current. firestore.rules only lets a
+    // viewer read while its key is the current one, so a new key cuts off every older link.
+
+    /** Turns sharing on with a brand-new link, or replaces the current link. */
+    suspend fun newShareLink() {
+        val u = uid ?: error("Sign in with Google first")
+        val old = _share.value.key
+        val name = _share.value.name ?: auth.currentUser?.displayName?.substringBefore(' ').orEmpty()
+        val bytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val key = Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
+        fs.collection("shares").document(key).set(mapOf("uid" to u, "name" to name)).await()
+        fs.collection("users").document(u)
+            .set(mapOf("share" to true, "shareKey" to key, "shareName" to name), SetOptions.merge()).await()
+        if (old.isNotEmpty()) runCatching { fs.collection("shares").document(old).delete().await() }
+    }
+
+    /** Turns sharing off; the current link stops working at once. */
+    suspend fun stopSharing() {
+        val u = uid ?: error("Sign in with Google first")
+        val old = _share.value.key
+        fs.collection("users").document(u).set(mapOf("share" to false, "shareKey" to ""), SetOptions.merge()).await()
+        if (old.isNotEmpty()) runCatching { fs.collection("shares").document(old).delete().await() }
+    }
+
     // ---------------- Cloud -> phone ----------------
 
     private fun listen(email: String?) {
         detach()
+        registrations = registrations + fs.collection("users").document(uid!!).addSnapshotListener { snap, _ ->
+            if (snap != null) _share.value = ShareState(
+                on = snap.getBoolean("share") == true,
+                key = snap.getString("shareKey") ?: "",
+                name = snap.getString("shareName"),
+            )
+        }
         registrations = registrations + collection("undo")
             .orderBy("time", Query.Direction.DESCENDING).limit(UNDO_MAX.toLong())
             .addSnapshotListener { snap, _ ->
@@ -594,6 +640,7 @@ class CloudSync(
         /** False in the share build: no sign-in, sync or undo; the log lives only on the phone. */
         val ENABLED = BuildConfig.CLOUD_SYNC
         const val UNDO_MAX = 10
+        const val FRIENDS_PAGE = "https://the-laurios.com/range-app/friends.html?k="
         private val COLLECTIONS = listOf("guns", "sessions", "cleanings")
 
         /** Same document contents? Numbers compare by value, and missing, null and "" are alike. */
