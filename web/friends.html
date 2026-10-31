@@ -162,7 +162,7 @@ function setZoom(s) { zs = Math.max(1, Math.min(8, s)); applyZoom(); }
 {
   const img = $("#lbImg");
   const pts = new Map();
-  let pinch = null, drag = null, swipeX = null, lastTap = 0;
+  let pinch = null, drag = null, swipeX = null, lastTap = 0, down = null;
   const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   img.addEventListener("wheel", (e) => { e.preventDefault(); setZoom(zs * (e.deltaY < 0 ? 1.25 : 0.8)); }, { passive: false });
   let lastTouch = 0; // touch taps are handled below; skip the dblclick the browser adds after them
@@ -170,6 +170,7 @@ function setZoom(s) { zs = Math.max(1, Math.min(8, s)); applyZoom(); }
   img.addEventListener("pointerdown", (e) => {
     if (e.pointerType === "touch") lastTouch = Date.now();
     img.setPointerCapture(e.pointerId);
+    if (!pts.size) down = { x: e.clientX, y: e.clientY };
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) { pinch = { d: dist(), s: zs }; drag = null; swipeX = null; }
     else if (pts.size === 1) {
@@ -188,16 +189,13 @@ function setZoom(s) { zs = Math.max(1, Math.min(8, s)); applyZoom(); }
     pts.delete(e.pointerId);
     if (pinch) { if (pts.size < 2) pinch = null; if (pts.size === 1 && zs > 1) { const p = [...pts.values()][0]; drag = { x: p.x - zx, y: p.y - zy }; } return; }
     drag = null;
-    if (swipeX !== null && e.type === "pointerup") {
-      const dx = e.clientX - swipeX; swipeX = null;
-      if (Math.abs(dx) > 50 && lbNames.length > 1) { lbStep(dx < 0 ? 1 : -1); return; }
-      if (e.pointerType === "touch") { // double-tap to zoom
-        const now = Date.now();
-        if (now - lastTap < 300) { setZoom(zs > 1 ? 1 : 3); lastTap = 0; } else lastTap = now;
-      }
-    } else if (e.pointerType === "touch" && e.type === "pointerup") {
+    const sx = swipeX; swipeX = null;
+    if (e.type !== "pointerup" || !down) return;
+    const dx = e.clientX - down.x, moved = Math.hypot(dx, e.clientY - down.y);
+    if (sx !== null && Math.abs(dx) > 50 && lbNames.length > 1) { lbStep(dx < 0 ? 1 : -1); return; }
+    if (e.pointerType === "touch" && moved < 12) { // double-tap: zoom in, or back to fit when zoomed
       const now = Date.now();
-      if (now - lastTap < 300) { setZoom(1); lastTap = 0; } else lastTap = now;
+      if (now - lastTap < 300) { setZoom(zs > 1 ? 1 : 3); lastTap = 0; } else lastTap = now;
     }
   };
   img.addEventListener("pointerup", up);

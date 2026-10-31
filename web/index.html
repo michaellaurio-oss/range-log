@@ -455,7 +455,11 @@ function adminView() {
     <h2>Backup</h2><div class="card muted">Backups are made from the phone app: Admin tab, then Backup, then Export (pictures included).</div>`;
 }
 
-const shareUrl = () => new URL("friends.html?u=" + encodeURIComponent(uid), location.href).href;
+// Next to this page, even when it was opened as ".../range-app" without the trailing slash.
+const shareUrl = () => {
+  const dir = location.pathname.replace(/\/[^/]*\.html?$/, "/").replace(/\/?$/, "/");
+  return location.origin + dir + "friends.html?u=" + encodeURIComponent(uid);
+};
 const setShare = (fields) => setDoc(doc(fs, "users", uid), fields, { merge: true }).catch(showErr);
 
 function wire(v) {
