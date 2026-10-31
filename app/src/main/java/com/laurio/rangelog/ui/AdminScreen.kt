@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +43,10 @@ fun AdminScreen(vm: MainViewModel) {
     val undoItems by vm.undoItems.collectAsStateWithLifecycle()
     val activity = LocalContext.current as? Activity
     var confirmImport by remember { mutableStateOf(false) }
+    var confirmNewLink by remember { mutableStateOf(false) }
+    val share by vm.share.collectAsStateWithLifecycle()
+    val shareBusy by vm.shareBusy.collectAsStateWithLifecycle()
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportTo(uri)
@@ -125,6 +130,49 @@ fun AdminScreen(vm: MainViewModel) {
                 }
             }
 
+            // View-only link for friends (web/friends.html); needs the Google sign-in above.
+            if (com.laurio.rangelog.data.CloudSync.ENABLED && sync.email != null) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Friends link (view only)", style = MaterialTheme.typography.titleMedium)
+                        if (share.url.isEmpty()) {
+                            Text(
+                                "Off. Turn it on to get a link friends can open without signing in. They see your " +
+                                    "sessions, guns, stats and photos but can't change anything. Each new link " +
+                                    "stops the older ones.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Button(onClick = vm::newShareLink, enabled = !shareBusy) {
+                                Text(if (shareBusy) "Making link…" else "Turn on friends link")
+                            }
+                        } else {
+                            Text(
+                                "On. Anyone with this link can look but not change anything. Cleaning logs and " +
+                                    "undo history stay private.",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Text(share.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(share.url))
+                                    vm.linkCopied()
+                                }) { Text("Copy link") }
+                                OutlinedButton(onClick = {
+                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                                        .setType("text/plain")
+                                        .putExtra(android.content.Intent.EXTRA_TEXT, share.url)
+                                    activity?.startActivity(android.content.Intent.createChooser(send, "Send the link"))
+                                }) { Text("Send…") }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { confirmNewLink = true }, enabled = !shareBusy) { Text("New link") }
+                                OutlinedButton(onClick = vm::stopSharing, enabled = !shareBusy) { Text("Turn off") }
+                            }
+                        }
+                    }
+                }
+            }
+
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Import photos", style = MaterialTheme.typography.titleMedium)
@@ -162,6 +210,16 @@ fun AdminScreen(vm: MainViewModel) {
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
         }
+    }
+
+    if (confirmNewLink) {
+        AlertDialog(
+            onDismissRequest = { confirmNewLink = false },
+            title = { Text("Make a new link?") },
+            text = { Text("The current link stops working for everyone who has it. Send the new one to the friends you still want to share with.") },
+            confirmButton = { TextButton(onClick = { confirmNewLink = false; vm.newShareLink() }) { Text("New link") } },
+            dismissButton = { TextButton(onClick = { confirmNewLink = false }) { Text("Cancel") } },
+        )
     }
 
     if (confirmImport) {

@@ -41,6 +41,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    val share = repo.sync.share
+    private val _shareBusy = MutableStateFlow(false)
+    val shareBusy: StateFlow<Boolean> = _shareBusy
+
+    /** Turns the friends link on, or replaces it (older links stop working). */
+    fun newShareLink() = shareAction("Couldn't make the link") { repo.sync.newShareLink() }
+    fun stopSharing() = shareAction("Couldn't turn off the link") { repo.sync.stopSharing() }
+    private fun shareAction(fail: String, block: suspend () -> Unit) = viewModelScope.launch {
+        if (_shareBusy.value) return@launch
+        _shareBusy.value = true
+        runCatching { block() }.onFailure { _messages.tryEmit("$fail: ${it.message ?: it.javaClass.simpleName}") }
+        _shareBusy.value = false
+    }
+    fun linkCopied() {
+        // Android 13+ shows its own "Copied" notice.
+        if (android.os.Build.VERSION.SDK_INT < 33) _messages.tryEmit("Link copied")
+    }
+
     fun signOut() = repo.sync.signOut()
     fun useThisPhone() = repo.sync.useThisPhone()
     fun useCloud() = repo.sync.useCloud()
