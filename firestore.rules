@@ -6,20 +6,34 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
 
-    // Friends link (web/friends.html?u=<uid>): while users/{uid} has share == true, anyone can
-    // read that user's guns, sessions and photos without signing in. Nobody else can write,
-    // and cleanings and undo history stay private.
-    function sharing(uid) {
-      return get(/databases/$(database)/documents/users/$(uid)).data.get('share', false) == true;
+    // Friends link: web/friends.html?k=<code>. shares/{code} = { uid, name }, made by the owner.
+    // The page signs in anonymously and adds itself to shares/{code}/viewers. It can then read the
+    // owner's guns, sessions and photos only while users/{uid} has share == true and shareKey is
+    // still that same code, so a new link or turning sharing off cuts off older links at once.
+    // Cleanings and undo history stay private; nobody but the owner can write their data.
+    match /shares/{code} {
+      allow get: if true;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow update: if request.auth != null && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+
+      match /viewers/{vid} {
+        allow get, create, update: if request.auth != null && request.auth.uid == vid
+                                   && exists(/databases/$(database)/documents/shares/$(code));
+      }
     }
-    match /users/{uid} {
-      allow get: if true; // only holds share / shareName
+
+    function canView(uid) {
+      let o = get(/databases/$(database)/documents/users/$(uid)).data;
+      return request.auth != null && o.get('share', false) == true && o.get('shareKey', '') != ''
+        && exists(/databases/$(database)/documents/shares/$(o.shareKey)/viewers/$(request.auth.uid));
     }
     match /users/{uid}/{c}/{id} {
-      allow read: if c in ['guns', 'sessions'] && sharing(uid);
+      allow read: if c in ['guns', 'sessions'] && canView(uid);
       // Photos one at a time by name (what the page uses), not as a list, so pictures that were
       // removed from sessions but kept in the cloud for undo can't be browsed.
-      allow get: if c == 'photos' && sharing(uid);
+      allow get: if c == 'photos' && canView(uid);
     }
   }
 }

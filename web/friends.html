@@ -79,18 +79,25 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getFirestore, collection, doc, onSnapshot, getDoc }
+import { getAuth, signInAnonymously }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import { getFirestore, collection, doc, onSnapshot, getDoc, setDoc }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-const fs = getFirestore(initializeApp({
+const fbApp = initializeApp({
   apiKey: "AIzaSyAp-HfZP-7pngGUB5rehzegB2iEjRyYh98",
   authDomain: "range-log-88193.firebaseapp.com",
   projectId: "range-log-88193",
-}));
+});
+const fs = getFirestore(fbApp);
+const auth = getAuth(fbApp);
 
-// The link is friends.html?u=<owner's user id>. The owner turns sharing on or off on the
-// Admin tab of index.html; firestore.rules only lets anyone read while it is on.
-const uid = new URLSearchParams(location.search).get("u");
+// The link is friends.html?k=<random share code>. shares/{code} says whose log it is. The page
+// signs in anonymously (nothing for the friend to do) and registers itself under that code;
+// firestore.rules only lets it read while the code is still the owner's current one. Making a
+// new link on the owner's Admin tab (or turning sharing off) stops every older link at once.
+const key = new URLSearchParams(location.search).get("k");
+let uid = null;
 const data = { guns: new Map(), sessions: new Map() };
 let tab = "sessions", search = "";
 
@@ -100,11 +107,16 @@ const fmtDate = (d) => new Date(d * 86400000).toLocaleDateString(undefined, { ti
 const notShared = () => { $("#msgText").textContent = "This range log isn't shared right now."; $("#msg").classList.remove("hidden"); $("#app").classList.add("hidden"); };
 
 async function start() {
-  if (!uid) return notShared();
-  let owner;
-  try { owner = await getDoc(doc(fs, "users", uid)); } catch { return notShared(); }
-  if (!owner.exists() || owner.data().share !== true) return notShared();
-  const name = (owner.data().shareName || "").trim();
+  if (!key || !/^[A-Za-z0-9_-]{16,64}$/.test(key)) return notShared();
+  let share;
+  try {
+    share = await getDoc(doc(fs, "shares", key));
+    if (!share.exists()) return notShared();
+    const me = (await signInAnonymously(auth)).user;
+    await setDoc(doc(fs, "shares", key, "viewers", me.uid), { at: Date.now() });
+  } catch (e) { console.warn(e); return notShared(); }
+  uid = share.data().uid;
+  const name = (share.data().name || "").trim();
   if (name) { $("#title").textContent = name + "'s Range Log"; document.title = name + "'s Range Log"; }
   $("#msg").classList.add("hidden"); $("#app").classList.remove("hidden");
   for (const c of Object.keys(data)) {
