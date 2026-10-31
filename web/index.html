@@ -115,6 +115,7 @@ const data = { guns: new Map(), sessions: new Map(), cleanings: new Map() };
 let tab = "sessions";
 let search = "";
 let unsubs = [];
+let owner = {}; // users/{uid}: { share, shareName } for the friends page
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -313,6 +314,7 @@ onAuthStateChanged(auth, (user) => {
     undoEntries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     renderUndo();
   }, showErr));
+  unsubs.push(onSnapshot(doc(fs, "users", uid), (d) => { owner = d.data() || {}; if (tab === "admin") render(); }, showErr));
   $("#signin").classList.add("hidden"); $("#app").classList.remove("hidden");
   for (const name of Object.keys(data)) {
     unsubs.push(onSnapshot(col(name), { includeMetadataChanges: true }, (snap) => {
@@ -443,10 +445,27 @@ function adminView() {
         staleCount(e) ? '<span class="muted" title="Those items were changed again after this step, so it can no longer be undone safely">edited since</span>'
           : `<button class="alt" data-undo="${esc(e.id)}">Undo</button>`}</div>`).join("") ||
       '<span class="muted">Nothing to undo yet.</span>'}</div>
+    <h2>Friends link (view only)</h2><div class="card">${owner.share ? `
+      <p style="margin-top:0">On. Anyone with this link can see your sessions, guns, stats and photos, but can't change anything. Cleaning logs and undo history stay private.</p>
+      <div class="row"><input id="shareUrl" class="grow" readonly value="${esc(shareUrl())}"><button class="btn" id="shareCopy">Copy link</button><a class="alt" href="${esc(shareUrl())}" target="_blank" rel="noopener" style="text-decoration:none;padding:7px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink)">Open</a></div>
+      <label>Name shown on the page (blank = just "Range Log")</label>
+      <div class="row"><input id="shareName" class="grow" value="${esc(owner.shareName || "")}" placeholder="e.g. Michael"><button class="alt danger" id="shareOff">Turn off</button></div>` : `
+      <p style="margin-top:0" class="muted">Off. Turn it on to get a link friends can open without signing in. They see sessions, guns, stats and photos, read only. You can turn it off any time and the link stops working.</p>
+      <button class="btn" id="shareOn">Turn on friends link</button>`}</div>
     <h2>Backup</h2><div class="card muted">Backups are made from the phone app: Admin tab, then Backup, then Export (pictures included).</div>`;
 }
 
+const shareUrl = () => new URL("friends.html?u=" + encodeURIComponent(uid), location.href).href;
+const setShare = (fields) => setDoc(doc(fs, "users", uid), fields, { merge: true }).catch(showErr);
+
 function wire(v) {
+  if ($("#shareOn")) $("#shareOn").onclick = () => setShare({ share: true, shareName: owner.shareName ?? (auth.currentUser?.displayName || "").split(" ")[0] });
+  if ($("#shareOff")) $("#shareOff").onclick = () => setShare({ share: false });
+  if ($("#shareName")) $("#shareName").onchange = () => setShare({ shareName: $("#shareName").value.trim() });
+  if ($("#shareCopy")) $("#shareCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText(shareUrl()); $("#shareCopy").textContent = "Copied"; }
+    catch { $("#shareUrl").select(); }
+  };
   const s = $("#search");
   if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
   v.querySelectorAll("[data-undo]").forEach((b) => b.onclick = () => undoLast(undoEntries.find((e) => e.id === b.dataset.undo)));

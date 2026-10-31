@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Range Log</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+  /* Read-only page for friends: same look as index.html, no sign-in, no editing. */
+  :root {
+    --bg: #f5f5f2; --card: #ffffff; --ink: #1d1f1c; --muted: #646a62; --line: #dcddd7;
+    --accent: #2f5d3a; --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151714; --card: #1e211d; --ink: #ecede8; --muted: #9aa097; --line: #343831;
+      --accent: #7fb88c; --accent-ink: #10150f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .ro { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; }
+  nav { display: flex; gap: 4px; flex: 1; }
+  nav button { background: none; border: 0; padding: 8px 14px; border-radius: 8px; font: inherit; color: var(--muted); cursor: pointer; }
+  nav button.on { background: var(--accent); color: var(--accent-ink); }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+  .card.click { cursor: pointer; }
+  .card.click:hover { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  h2 { font-size: 15px; margin: 22px 0 8px; color: var(--muted); font-weight: 600; }
+  button.alt { background: none; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .tile b { font-size: 24px; display: block; }
+  .bar { height: 10px; background: var(--accent); border-radius: 5px; }
+  .barrow { display: grid; grid-template-columns: minmax(70px, 120px) 1fr 64px; gap: 10px; align-items: center; margin: 5px 0; }
+  .barrow span:last-child { text-align: right; }
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); padding: 18px; width: min(680px, 94vw); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .entry { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 10px 0; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+  .thumbs img { height: 72px; min-width: 54px; border-radius: 6px; background: var(--line); cursor: zoom-in; display: block; }
+  #lb { padding: 10px; }
+  #lb img { max-width: 100%; max-height: 80vh; display: block; margin: 0 auto; }
+  .lbwrap { position: relative; }
+  .lbnav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 64px; border: 0; border-radius: 10px; background: rgba(0,0,0,.45); color: #fff; font-size: 34px; line-height: 1; cursor: pointer; }
+  #lbPrev { left: 6px; }
+  #lbNext { right: 6px; }
+  #lbCount { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff; font-size: 13px; padding: 2px 10px; border-radius: 10px; }
+  #msg { text-align: center; margin-top: 18vh; padding: 0 16px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="msg"><h1>Range Log</h1><p class="muted" id="msgText">Loading…</p></div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1 id="title">Range Log</h1><span class="ro">View only</span>
+    <nav>
+      <button data-tab="sessions" class="on">Sessions</button>
+      <button data-tab="guns">Guns</button>
+      <button data-tab="stats">Stats</button>
+    </nav>
+  </header>
+  <main id="view"></main>
+</div>
+
+<dialog id="dlg"></dialog>
+<dialog id="lb"><div class="lbwrap"><img id="lbImg" alt=""><button class="lbnav" id="lbPrev" aria-label="Previous photo">‹</button><button class="lbnav" id="lbNext" aria-label="Next photo">›</button><span id="lbCount"></span></div><div class="row" style="margin-top:10px"><span class="grow"></span><button class="alt" id="lbClose">Close</button></div></dialog>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getFirestore, collection, doc, onSnapshot, getDoc }
+  from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const fs = getFirestore(initializeApp({
+  apiKey: "AIzaSyAp-HfZP-7pngGUB5rehzegB2iEjRyYh98",
+  authDomain: "range-log-88193.firebaseapp.com",
+  projectId: "range-log-88193",
+}));
+
+// The link is friends.html?u=<owner's user id>. The owner turns sharing on or off on the
+// Admin tab of index.html; firestore.rules only lets anyone read while it is on.
+const uid = new URLSearchParams(location.search).get("u");
+const data = { guns: new Map(), sessions: new Map() };
+let tab = "sessions", search = "";
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtDate = (d) => new Date(d * 86400000).toLocaleDateString(undefined, { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" });
+const notShared = () => { $("#msgText").textContent = "This range log isn't shared right now."; $("#msg").classList.remove("hidden"); $("#app").classList.add("hidden"); };
+
+async function start() {
+  if (!uid) return notShared();
+  let owner;
+  try { owner = await getDoc(doc(fs, "users", uid)); } catch { return notShared(); }
+  if (!owner.exists() || owner.data().share !== true) return notShared();
+  const name = (owner.data().shareName || "").trim();
+  if (name) { $("#title").textContent = name + "'s Range Log"; document.title = name + "'s Range Log"; }
+  $("#msg").classList.add("hidden"); $("#app").classList.remove("hidden");
+  for (const c of Object.keys(data)) {
+    onSnapshot(collection(fs, "users", uid, c), (snap) => {
+      data[c].clear();
+      snap.forEach((d) => data[c].set(d.id, d.data()));
+      render();
+    }, notShared); // sharing was turned off while the page was open
+  }
+}
+start();
+
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab;
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  render();
+});
+
+// ---------- photos ----------
+const photoCache = new Map();
+function photoData(name) {
+  if (!photoCache.has(name)) {
+    photoCache.set(name, getDoc(doc(fs, "users", uid, "photos", name))
+      .then((d) => (d.exists() ? "data:image/jpeg;base64," + d.data().data : null))
+      .catch(() => null)
+      .then((src) => { if (!src) photoCache.delete(name); return src; }));
+  }
+  return photoCache.get(name);
+}
+function fillPhotos(root) {
+  root.querySelectorAll("img[data-photo]").forEach(async (img) => {
+    const src = await photoData(img.dataset.photo);
+    if (!src) { img.alt = "not uploaded yet"; return; }
+    img.src = src;
+    img.onclick = (ev) => {
+      ev.stopPropagation();
+      const names = [...img.closest(".thumbs").querySelectorAll("img[data-photo]")].map((x) => x.dataset.photo);
+      openLightbox(names, names.indexOf(img.dataset.photo));
+    };
+  });
+}
+let lbNames = [], lbIdx = 0;
+async function showLb() {
+  $("#lbCount").textContent = (lbIdx + 1) + " of " + lbNames.length;
+  $("#lbImg").src = (await photoData(lbNames[lbIdx])) || "";
+}
+function openLightbox(names, idx) {
+  lbNames = names; lbIdx = Math.max(0, idx);
+  $("#lbPrev").style.visibility = $("#lbNext").style.visibility = names.length > 1 ? "visible" : "hidden";
+  $("#lbCount").style.visibility = names.length > 1 ? "visible" : "hidden";
+  showLb();
+  if (!$("#lb").open) $("#lb").showModal();
+}
+const lbStep = (d) => { lbIdx = (lbIdx + d + lbNames.length) % lbNames.length; showLb(); };
+$("#lbPrev").onclick = () => lbStep(-1);
+$("#lbNext").onclick = () => lbStep(1);
+$("#lbClose").onclick = () => $("#lb").close();
+document.addEventListener("keydown", (e) => {
+  if (!$("#lb").open) return;
+  if (e.key === "ArrowLeft") lbStep(-1); else if (e.key === "ArrowRight") lbStep(1);
+});
+{ // swipe on phones
+  let x0 = null;
+  $("#lbImg").addEventListener("touchstart", (e) => { x0 = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+  $("#lbImg").addEventListener("touchend", (e) => {
+    if (x0 === null || lbNames.length < 2) return;
+    const dx = e.changedTouches[0].clientX - x0; x0 = null;
+    if (Math.abs(dx) > 50) lbStep(dx < 0 ? 1 : -1);
+  });
+}
+
+// ---------- derived ----------
+const gunList = () => [...data.guns].map(([id, g]) => ({ id, ...g })).filter((g) => !g.deleted);
+const sessionList = () => [...data.sessions].map(([id, s]) => ({ id, ...s })).sort((a, b) => b.date - a.date);
+const sessionRounds = (s) => (s.guns || []).reduce((t, e) => t + (e.rounds ?? 0), 0);
+const gunName = (id) => { const g = data.guns.get(id); return g && !g.deleted ? g.name : "Other gun"; };
+function gunSummary(id) {
+  let total = 0, count = 0, lastShot = null;
+  for (const s of data.sessions.values()) {
+    const mine = (s.guns || []).filter((e) => e.gun === id);
+    if (!mine.length) continue;
+    count++; lastShot = Math.max(lastShot ?? 0, s.date);
+    for (const e of mine) total += e.rounds ?? 0;
+  }
+  return { total, count, lastShot };
+}
+
+// ---------- views ----------
+function render() {
+  const v = $("#view");
+  v.innerHTML = tab === "sessions" ? sessionsView() : tab === "guns" ? gunsView() : statsView();
+  const s = $("#search");
+  if (s) s.oninput = () => { search = s.value; const pos = s.selectionStart; render(); const n = $("#search"); n.focus(); n.setSelectionRange(pos, pos); };
+  v.querySelectorAll("[data-session]").forEach((c) => c.onclick = () => sessionView(c.dataset.session));
+  v.querySelectorAll("[data-gun]").forEach((c) => c.onclick = () => gunView(c.dataset.gun));
+  fillPhotos(v);
+}
+
+function sessionsView() {
+  const q = search.toLowerCase();
+  const list = sessionList().filter((s) => !q ||
+    [s.location, s.notes, fmtDate(s.date), ...(s.guns || []).map((e) => gunName(e.gun) + " " + (e.notes || ""))]
+      .join(" ").toLowerCase().includes(q));
+  let html = `<input id="search" placeholder="Search sessions" value="${esc(search)}">`;
+  let year = null;
+  for (const s of list) {
+    const y = new Date(s.date * 86400000).getUTCFullYear();
+    if (y !== year) { year = y; html += `<h2>${y}</h2>`; }
+    const names = (s.guns || []).map((e) => `${esc(gunName(e.gun))}${e.rounds != null ? " " + e.rounds : ""}`).join(" · ");
+    const r = sessionRounds(s);
+    html += `<div class="card click" data-session="${esc(s.id)}"><div class="row">
+      <div class="grow"><b>${fmtDate(s.date)}</b> ${s.location ? "· " + esc(s.location) : ""}
+        <div class="muted">${names || "No guns logged"}</div>
+        ${s.notes ? `<div class="muted">${esc(s.notes)}</div>` : ""}
+        ${(s.photos || []).length ? `<div class="thumbs">${s.photos.map((p) => `<img data-photo="${esc(p.fileName)}" alt="loading…">`).join("")}</div>` : ""}</div>
+      <div>${r ? `<b>${r.toLocaleString()}</b> <span class="muted">rds</span>` : ""}</div></div></div>`;
+  }
+  if (!list.length) html += `<p class="muted">${search ? "No sessions match." : "No sessions yet."}</p>`;
+  return html;
+}
+
+function gunsView() {
+  const guns = gunList().sort((a, b) => (b.active - a.active) || a.name.localeCompare(b.name));
+  return guns.map((g) => {
+    const s = gunSummary(g.id);
+    return `<div class="card click" data-gun="${esc(g.id)}"><div class="row">
+      ${g.photo ? `<div class="thumbs" style="margin:0"><img data-photo="${esc(g.photo)}" alt="loading…"></div>` : ""}
+      <div class="grow"><b>${esc(g.name)}</b> ${g.active ? "" : '<span class="muted">(retired)</span>'}
+        <div class="muted">${esc(g.description)}</div>
+        <div class="muted">${s.total.toLocaleString()} rds · ${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div>
+        ${g.notMine ? '<div class="muted">Rented or borrowed</div>' : ""}</div></div></div>`;
+  }).join("") || '<p class="muted">No guns yet.</p>';
+}
+
+function statsView() {
+  const sessions = sessionList();
+  const total = sessions.reduce((t, s) => t + sessionRounds(s), 0);
+  const year = new Date().getFullYear();
+  const byYear = {};
+  for (const s of sessions) { const y = new Date(s.date * 86400000).getUTCFullYear(); byYear[y] = (byYear[y] || 0) + sessionRounds(s); }
+  const counted = sessions.filter((s) => sessionRounds(s) > 0);
+  const byGun = gunList().map((g) => [g.name, gunSummary(g.id).total]).filter((x) => x[1] > 0).sort((a, b) => b[1] - a[1]);
+  const bars = (rows) => { const max = Math.max(1, ...rows.map((r) => r[1])); return rows.map(([k, v]) =>
+    `<div class="barrow"><span>${esc(k)}</span><div><div class="bar" style="width:${(v / max) * 100}%"></div></div><span>${v.toLocaleString()}</span></div>`).join(""); };
+  return `<div class="grid">
+    <div class="card tile"><span class="muted">Rounds, all time</span><b>${total.toLocaleString()}</b></div>
+    <div class="card tile"><span class="muted">Sessions</span><b>${sessions.length}</b></div>
+    <div class="card tile"><span class="muted">Rounds in ${year}</span><b>${(byYear[year] || 0).toLocaleString()}</b></div>
+    <div class="card tile"><span class="muted">Avg rounds / session</span><b>${counted.length ? Math.floor(total / counted.length) : 0}</b></div></div>
+    <h2>Rounds by year</h2><div class="card">${bars(Object.entries(byYear).sort())}</div>
+    <h2>Rounds by gun</h2><div class="card">${bars(byGun)}</div>`;
+}
+
+// ---------- detail dialogs ----------
+const dlg = $("#dlg");
+function sessionView(id) {
+  const s = data.sessions.get(id);
+  if (!s) return;
+  const total = sessionRounds(s);
+  dlg.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${fmtDate(s.date)}</h3><button class="alt" id="closeBtn">Close</button></div>
+    ${s.location ? `<p><b>${esc(s.location)}</b></p>` : ""}
+    ${total ? `<p>${total.toLocaleString()} rounds</p>` : ""}
+    ${(s.guns || []).map((e) => `<div class="entry"><div class="row"><b class="grow">${esc(gunName(e.gun))}</b>
+        <span>${e.rounds != null ? e.rounds + " rds" : '<span class="muted">not counted</span>'}</span></div>
+      ${(e.strings || []).map((t) => `<div>${t.rounds} @ ${t.yards} yds${t.notes ? " · " + esc(t.notes) : ""}</div>`).join("")}
+      ${e.notes ? `<div class="muted">${esc(e.notes)}</div>` : ""}</div>`).join("")}
+    ${s.notes ? `<h2>Notes</h2><div style="white-space:pre-wrap">${esc(s.notes)}</div>` : ""}
+    ${(s.photos || []).length ? `<h2>Target photos</h2><div class="thumbs">${s.photos.map((p) => `<img data-photo="${esc(p.fileName)}" alt="loading…">`).join("")}</div>` : ""}`;
+  $("#closeBtn").onclick = () => dlg.close();
+  fillPhotos(dlg);
+  if (!dlg.open) dlg.showModal();
+}
+
+function gunView(id) {
+  const g = data.guns.get(id);
+  if (!g) return;
+  const s = gunSummary(id);
+  const mine = sessionList().filter((x) => (x.guns || []).some((e) => e.gun === id));
+  const roundsIn = (x) => (x.guns || []).filter((e) => e.gun === id).reduce((t, e) => t + (e.rounds ?? 0), 0);
+  dlg.innerHTML = `<div class="row"><h3 class="grow" style="margin:0">${esc(g.name)}</h3><button class="alt" id="closeBtn">Close</button></div>
+    ${g.photo ? `<div class="thumbs"><img data-photo="${esc(g.photo)}" alt="loading…" style="height:auto;max-height:260px;max-width:100%"></div>` : ""}
+    ${g.description ? `<p><b>${esc(g.description)}</b></p>` : ""}
+    ${g.notes ? `<h2>Upgrades and notes</h2><div style="white-space:pre-wrap">${esc(g.notes)}</div>` : ""}
+    <div class="card" style="margin-top:12px"><b>${s.total.toLocaleString()} rounds lifetime</b>
+      <div>${s.count} sessions${s.lastShot ? " · last shot " + fmtDate(s.lastShot) : ""}</div></div>
+    <h2>Sessions</h2>
+    ${mine.map((x) => `<div class="row" style="padding:4px 0;cursor:pointer" data-sess="${esc(x.id)}"><span class="grow">${fmtDate(x.date)}</span><b>${roundsIn(x) || "—"} rds</b></div>`).join("") || '<span class="muted">Not logged in any session yet.</span>'}`;
+  $("#closeBtn").onclick = () => dlg.close();
+  dlg.querySelectorAll("[data-sess]").forEach((r) => r.onclick = () => sessionView(r.dataset.sess));
+  fillPhotos(dlg);
+  if (!dlg.open) dlg.showModal();
+}
+</script>
+</body>
+</html>

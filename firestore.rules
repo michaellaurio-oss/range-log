@@ -5,5 +5,18 @@ service cloud.firestore {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+
+    // Friends link (web/friends.html?u=<uid>): while users/{uid} has share == true, anyone can
+    // read that user's guns, sessions and photos without signing in. Nobody else can write,
+    // and cleanings and undo history stay private.
+    function sharing(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data.get('share', false) == true;
+    }
+    match /users/{uid} {
+      allow get: if true; // only holds share / shareName
+    }
+    match /users/{uid}/{c}/{id} {
+      allow read: if c in ['guns', 'sessions', 'photos'] && sharing(uid);
+    }
   }
 }

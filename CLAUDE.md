@@ -86,6 +86,10 @@ Explain build and install steps plainly and prefer doing things over telling him
   `web/` to the-laurios.com/range-app on every push that touches `web/` (repo secrets FTP_SERVER,
   FTP_USERNAME, FTP_PASSWORD, FTP_DIR). `the-laurios.com` must stay in Firebase Authorized domains.
 - Repo: https://github.com/michaellaurio-oss/range-log (private, branch `main`). Commit and push when asked.
+- Friends link (added 2026-10-31): `web/friends.html?u=<uid>` is a read-only page with no sign-in (sessions,
+  guns, stats, photos; no cleaning log, undo or editing). Turned on/off on the web Admin tab, which writes
+  `users/{uid}` = `{share, shareName}` (merge). `firestore.rules` lets anyone `get` `users/{uid}` and read
+  `guns|sessions|photos` while `share == true`; cleanings and undo stay owner-only. Phone app has no toggle yet.
 - Not synced: photo captions are stored but never edited anywhere; reminders are local to the phone.
 
 ## Behavior decisions (2026-10-03)
@@ -157,7 +161,8 @@ app/src/personal/assets/seed.json   preloaded history (Backup JSON format), pers
 app/src/share/                  share-build overrides (manifest, placeholder string)
 tools/make_seed.py              regenerates seed.json from hand-transcribed records
 web/index.html                 desktop web page (Firebase JS), deployed to the-laurios.com/range-app
-firestore.rules                 Firestore security rules (own data only)
+web/friends.html               read-only friends page (no sign-in)
+firestore.rules                 Firestore security rules (own data + friends link)
 ```
 
 ## Data model
