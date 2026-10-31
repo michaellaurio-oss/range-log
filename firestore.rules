@@ -16,7 +16,10 @@ service cloud.firestore {
       allow get: if true; // only holds share / shareName
     }
     match /users/{uid}/{c}/{id} {
-      allow read: if c in ['guns', 'sessions', 'photos'] && sharing(uid);
+      allow read: if c in ['guns', 'sessions'] && sharing(uid);
+      // Photos one at a time by name (what the page uses), not as a list, so pictures that were
+      // removed from sessions but kept in the cloud for undo can't be browsed.
+      allow get: if c == 'photos' && sharing(uid);
     }
   }
 }
