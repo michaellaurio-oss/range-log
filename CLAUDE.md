@@ -86,10 +86,13 @@ Explain build and install steps plainly and prefer doing things over telling him
   `web/` to the-laurios.com/range-app on every push that touches `web/` (repo secrets FTP_SERVER,
   FTP_USERNAME, FTP_PASSWORD, FTP_DIR). `the-laurios.com` must stay in Firebase Authorized domains.
 - Repo: https://github.com/michaellaurio-oss/range-log (private, branch `main`). Commit and push when asked.
-- Friends link (added 2026-10-31): `web/friends.html?u=<uid>` is a read-only page with no sign-in (sessions,
-  guns, stats, photos; no cleaning log, undo or editing). Turned on/off on the web Admin tab, which writes
-  `users/{uid}` = `{share, shareName}` (merge). `firestore.rules` lets anyone `get` `users/{uid}` and read
-  `guns|sessions|photos` while `share == true`; cleanings and undo stay owner-only. Phone app has no toggle yet.
+- Friends link (added 2026-10-31; changeable links same day): `web/friends.html?k=<code>` is a read-only page
+  with no visible sign-in (sessions, guns, stats, photos; no cleaning log, undo or editing). The web Admin tab makes a
+  random 22-char code: `shares/{code}` = `{uid, name}` (public `get`) and `users/{uid}` = `{share, shareKey, shareName}`.
+  The page signs in with Firebase **Anonymous** auth (must be enabled in the console) and writes
+  `shares/{code}/viewers/{anonUid}`; rules (`canView`) allow reading `guns|sessions` and `get` on single `photos`
+  only while `share == true` and that viewer exists under the *current* `shareKey`. "New link" / turning sharing on
+  makes a new code and deletes the old shares doc, so every older link stops. Phone app has no toggle yet.
 - Not synced: photo captions are stored but never edited anywhere; reminders are local to the phone.
 
 ## Behavior decisions (2026-10-03)

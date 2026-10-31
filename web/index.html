@@ -115,7 +115,7 @@ const data = { guns: new Map(), sessions: new Map(), cleanings: new Map() };
 let tab = "sessions";
 let search = "";
 let unsubs = [];
-let owner = {}; // users/{uid}: { share, shareName } for the friends page
+let owner = {}; // users/{uid}: { share, shareKey, shareName } for the friends page
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -445,12 +445,12 @@ function adminView() {
         staleCount(e) ? '<span class="muted" title="Those items were changed again after this step, so it can no longer be undone safely">edited since</span>'
           : `<button class="alt" data-undo="${esc(e.id)}">Undo</button>`}</div>`).join("") ||
       '<span class="muted">Nothing to undo yet.</span>'}</div>
-    <h2>Friends link (view only)</h2><div class="card">${owner.share ? `
-      <p style="margin-top:0">On. Anyone with this link can see your sessions, guns, stats and photos, but can't change anything. Cleaning logs and undo history stay private.</p>
+    <h2>Friends link (view only)</h2><div class="card">${owner.share && owner.shareKey ? `
+      <p style="margin-top:0">On. Anyone with this link can see your sessions, guns, stats and photos, but can't change anything. Cleaning logs and undo history stay private. <b>New link</b> makes a fresh one and stops the old link right away.</p>
       <div class="row"><input id="shareUrl" class="grow" readonly value="${esc(shareUrl())}"><button class="btn" id="shareCopy">Copy link</button><a class="alt" href="${esc(shareUrl())}" target="_blank" rel="noopener" style="text-decoration:none;padding:7px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink)">Open</a></div>
       <label>Name shown on the page (blank = just "Range Log")</label>
-      <div class="row"><input id="shareName" class="grow" value="${esc(owner.shareName || "")}" placeholder="e.g. Michael"><button class="alt danger" id="shareOff">Turn off</button></div>` : `
-      <p style="margin-top:0" class="muted">Off. Turn it on to get a link friends can open without signing in. They see sessions, guns, stats and photos, read only. You can turn it off any time and the link stops working.</p>
+      <div class="row"><input id="shareName" class="grow" value="${esc(owner.shareName || "")}" placeholder="e.g. Michael"><button class="alt" id="shareNew">New link</button><button class="alt danger" id="shareOff">Turn off</button></div>` : `
+      <p style="margin-top:0" class="muted">Off. Turn it on to get a link friends can open without signing in. They see sessions, guns, stats and photos, read only. Each time you turn it on (or press New link) you get a different link, and older links stop working.</p>
       <button class="btn" id="shareOn">Turn on friends link</button>`}</div>
     <h2>Backup</h2><div class="card muted">Backups are made from the phone app: Admin tab, then Backup, then Export (pictures included).</div>`;
 }
@@ -458,14 +458,40 @@ function adminView() {
 // Next to this page, even when it was opened as ".../range-app" without the trailing slash.
 const shareUrl = () => {
   const dir = location.pathname.replace(/\/[^/]*\.html?$/, "/").replace(/\/?$/, "/");
-  return location.origin + dir + "friends.html?u=" + encodeURIComponent(uid);
+  return location.origin + dir + "friends.html?k=" + encodeURIComponent(owner.shareKey || "");
 };
-const setShare = (fields) => setDoc(doc(fs, "users", uid), fields, { merge: true }).catch(showErr);
+// A share code is 22 random URL-safe characters. shares/{code} = { uid, name } is what the friends
+// page looks up; users/{uid}.shareKey says which code is current, so replacing it (or deleting the
+// shares doc) cuts off everyone who used an older link.
+const newKey = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const shareNameNow = () => owner.shareName ?? (auth.currentUser?.displayName || "").split(" ")[0];
+async function newShareLink() {
+  const old = owner.shareKey, key = newKey(), name = shareNameNow();
+  try {
+    await setDoc(doc(fs, "shares", key), { uid, name });
+    await setDoc(doc(fs, "users", uid), { share: true, shareKey: key, shareName: name }, { merge: true });
+    if (old) await deleteDoc(doc(fs, "shares", old)).catch(() => {});
+  } catch (e) { showErr(e); }
+}
+async function stopSharing() {
+  const old = owner.shareKey;
+  try {
+    await setDoc(doc(fs, "users", uid), { share: false, shareKey: "" }, { merge: true });
+    if (old) await deleteDoc(doc(fs, "shares", old)).catch(() => {});
+  } catch (e) { showErr(e); }
+}
+async function renameShare(name) {
+  try {
+    await setDoc(doc(fs, "users", uid), { shareName: name }, { merge: true });
+    if (owner.shareKey) await setDoc(doc(fs, "shares", owner.shareKey), { uid, name });
+  } catch (e) { showErr(e); }
+}
 
 function wire(v) {
-  if ($("#shareOn")) $("#shareOn").onclick = () => setShare({ share: true, shareName: owner.shareName ?? (auth.currentUser?.displayName || "").split(" ")[0] });
-  if ($("#shareOff")) $("#shareOff").onclick = () => setShare({ share: false });
-  if ($("#shareName")) $("#shareName").onchange = () => setShare({ shareName: $("#shareName").value.trim() });
+  if ($("#shareOn")) $("#shareOn").onclick = newShareLink;
+  if ($("#shareNew")) $("#shareNew").onclick = () => { if (confirm("Make a new link? The current link stops working for everyone who has it.")) newShareLink(); };
+  if ($("#shareOff")) $("#shareOff").onclick = stopSharing;
+  if ($("#shareName")) $("#shareName").onchange = () => renameShare($("#shareName").value.trim());
   if ($("#shareCopy")) $("#shareCopy").onclick = async () => {
     try { await navigator.clipboard.writeText(shareUrl()); $("#shareCopy").textContent = "Copied"; }
     catch { $("#shareUrl").select(); }
