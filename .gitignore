@@ -14,3 +14,15 @@ keystore.properties
 *.jks
 share-signing-key/
 build-and-install.log
+
+# Personal records: the repo is public, so these stay on the PC only
+LAURIO_Shooting_Records.txt
+tools/make_seed.py
+app/src/main/assets/seed.json
+app/src/personal/assets/seed.json
+photos/
+pre-app photos/
+_working pics/
+_private/
+*.pptx
+CLAUDE.local.md
